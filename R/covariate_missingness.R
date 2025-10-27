@@ -1,15 +1,25 @@
 #' Summarize and visualize missingness of covariates
 #'
 #' Computes missingness summaries for a set of covariates and displays a joint
-#' missingness heatmap (upper-triangle including diagonal). If no variables are specified,
-#' it defaults to all variables starting with `"X_"`, excluding columns ending with `_nona` or `_missing`.
+#' missingness heatmap (upper-triangle including the diagonal).
 #'
-#' @param data A data.frame or tibble containing the covariates.
-#' @param ... Covariates to include. If left empty, all variables starting with `"X_"` are used.
+#' If no variables are specified, it defaults to all variables starting with `"X_"`,
+#' excluding columns ending with `_nona` or `_missing`.
+#'
+#' This function supports both unquoted column names and tidyselect helpers
+#' such as [dplyr::all_of()], [tidyselect::starts_with()], etc.
+#'
+#' @param data A data frame or tibble containing the covariates.
+#' @param ... Columns to include in the analysis. You can specify them
+#'   unquoted (e.g., `age`, `income`) or using selection helpers such as
+#'   [dplyr::all_of()] or [tidyselect::starts_with()].
+#'   If left empty, all `"X_"` columns are used.
 #'
 #' @return Invisibly returns a list with two elements:
-#'   \item{summary}{A tibble with total cases, total missing, and fraction missing per variable.}
-#'   \item{heatmap}{A ggplot2 heatmap of upper-triangle joint missingness including diagonal.}
+#' \describe{
+#'   \item{summary}{A tibble summarizing total cases, total missing, and fraction missing per variable.}
+#'   \item{heatmap}{A [ggplot2::ggplot()] object showing the upper-triangle joint missingness (including diagonal).}
+#' }
 #'
 #' @examples
 #' dat <- data.frame(
@@ -18,25 +28,34 @@
 #'   X_age = c(25, NA, 30, 40, NA, 35, 45, NA, 50, 55)
 #' )
 #'
-#' # X_pid_3 and X_income have very similar missingness
+#' # X_pid_3 and X_income have similar missingness
 #' covariate_missingness(dat, X_pid_3, X_income, X_age)
 #'
 #' # Or default to all "X_" columns
 #' covariate_missingness(dat)
 #'
+#' # Or use tidyselect helpers
+#' vars <- c("X_pid_3", "X_income", "X_age")
+#' covariate_missingness(dat, dplyr::all_of(vars))
+#'
+#' @importFrom tidyselect eval_select
+#' @importFrom rlang expr
+#' @importFrom dplyr mutate rowwise ungroup filter
+#' @importFrom tibble tibble
+#' @importFrom ggplot2 ggplot aes geom_tile geom_text scale_fill_viridis_c coord_fixed labs theme_minimal theme element_text
 #' @export
 covariate_missingness <- function(data, ...) {
-  # Capture the columns, if any
-  vars <- rlang::enquos(...)
+  # Evaluate column selection; supports unquoted names, all_of(), or nothing
+  sel <- eval_select(expr(c(...)), data)
+  varnames <- names(sel)
 
-  if (length(vars) == 0) {
+  # If no columns explicitly provided, fall back to X_* variables
+  if (length(varnames) == 0) {
     varnames <- names(data)
     varnames <- varnames[
       startsWith(varnames, "X_") &
         !grepl("(_nona|_missing)$", varnames)
     ]
-  } else {
-    varnames <- purrr::map_chr(vars, ~rlang::as_name(.x))
   }
 
   if (length(varnames) == 0) {
@@ -47,17 +66,12 @@ covariate_missingness <- function(data, ...) {
   n <- nrow(data)
 
   # Step 1: Missingness summary
-  total_missing <- integer(length(varnames))
-  fraction_missing <- numeric(length(varnames))
+  total_missing <- vapply(varnames, function(v) sum(is.na(data[[v]])), integer(1))
+  fraction_missing <- vapply(varnames, function(v) mean(is.na(data[[v]])), numeric(1))
 
-  for (i in seq_along(varnames)) {
-    total_missing[i] <- sum(is.na(data[[varnames[i]]]))
-    fraction_missing[i] <- mean(is.na(data[[varnames[i]]]))
-  }
-
-  missing_summary <- tibble::tibble(
+  missing_summary <- tibble(
     variable = varnames,
-    total_cases = rep(n, length(varnames)),
+    total_cases = n,
     total_missing_cases = total_missing,
     fraction_missing_cases = fraction_missing
   )
@@ -66,31 +80,43 @@ covariate_missingness <- function(data, ...) {
 
   # Step 2: Joint missingness heatmap
   joint_missing <- expand.grid(var1 = varnames, var2 = varnames) |>
-    dplyr::mutate(
+    mutate(
       var1_f = factor(var1, levels = varnames),
       var2_f = factor(var2, levels = varnames)
     ) |>
-    dplyr::rowwise() |>
-    dplyr::mutate(
+    rowwise() |>
+    mutate(
       fraction_missing = if (var1 == var2) {
         mean(is.na(data[[var1]]))
       } else {
         mean(is.na(data[[var1]]) & is.na(data[[var2]]))
       }
     ) |>
-    dplyr::ungroup() |>
-    dplyr::filter(as.integer(var1_f) <= as.integer(var2_f))
+    ungroup() |>
+    filter(as.integer(var1_f) <= as.integer(var2_f))
 
-  heatmap_plot <- ggplot2::ggplot(joint_missing,
-                                  ggplot2::aes(x = var1_f, y = var2_f, fill = fraction_missing)) +
-    ggplot2::geom_tile(color = "white") +
-    ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", fraction_missing)), size = 4) +
-    ggplot2::scale_fill_viridis_c(option = "viridis", direction = -1,
-                                  limits = c(0, max(joint_missing$fraction_missing))) +
-    ggplot2::coord_fixed() +
-    ggplot2::labs(x = NULL, y = NULL, fill = "Fraction missing") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
+  heatmap_plot <- ggplot(
+    joint_missing,
+    aes(x = var1_f, y = var2_f, fill = fraction_missing)
+  ) +
+    geom_tile(color = "white") +
+    geom_text(
+      aes(label = sprintf("%.2f", fraction_missing)),
+      size = 4
+    ) +
+    scale_fill_viridis_c(
+      option = "viridis",
+      direction = -1,
+      limits = c(0, max(joint_missing$fraction_missing))
+    ) +
+    coord_fixed() +
+    labs(
+      x = NULL,
+      y = NULL,
+      fill = "Fraction missing"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
   print(heatmap_plot)
 
