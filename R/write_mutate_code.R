@@ -36,7 +36,7 @@
 #' write_covariate_imputation_code(dat, dplyr::all_of(vars))
 #'
 #' @export
-write_covariate_imputation_code <- function(data, ...) {
+write_covariate_imputation_code <- function(data, ..., include_missingness_dummies = TRUE) {
   # Capture the dataset name as a string
   data_name <- rlang::as_name(rlang::ensym(data))
 
@@ -60,6 +60,8 @@ write_covariate_imputation_code <- function(data, ...) {
 
   code_lines <- purrr::map_chr(varnames, function(v) {
     col <- data[[v]]
+    if(include_missingness_dummies == TRUE){
+
     if (is.numeric(col)) {
       glue::glue(
         "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE)),\n",
@@ -70,6 +72,17 @@ write_covariate_imputation_code <- function(data, ...) {
         "    {v}_nona = replace_na({v}, mode({v})),\n",
         "    {v}_missing = if_else(is.na({v}), 1, 0)"
       )
+    }
+    } else{
+      if (is.numeric(col)) {
+        glue::glue(
+          "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE)),\n",
+        )
+      } else {
+        glue::glue(
+          "    {v}_nona = replace_na({v}, mode({v})),\n",
+        )
+      }
     }
   })
 

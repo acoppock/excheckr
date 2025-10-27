@@ -4,7 +4,7 @@
 \alias{write_covariate_imputation_code}
 \title{Write covariate imputation code}
 \usage{
-write_covariate_imputation_code(data, ...)
+write_covariate_imputation_code(data, ..., include_missingness_dummies = TRUE)
 }
 \arguments{
 \item{data}{A data frame or tibble.}
