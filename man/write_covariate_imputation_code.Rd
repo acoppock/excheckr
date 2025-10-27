@@ -9,7 +9,10 @@ write_covariate_imputation_code(data, ...)
 \arguments{
 \item{data}{A data frame or tibble.}
 
-\item{...}{Unquoted variable names to generate imputation code for.}
+\item{...}{Columns to generate imputation code for for. You can specify them
+unquoted (e.g., `age`, `income`) or using selection helpers such as
+[dplyr::all_of()] or [tidyselect::starts_with()].
+If left empty, all `"X_"` columns are used.}
 }
 \value{
 Invisibly returns the generated code as a single string.
@@ -34,5 +37,12 @@ dat <- data.frame(
 
 # Generate imputation code
 write_covariate_imputation_code(dat, X_factor_variable, X_numeric_variable)
+
+# Or default to all "X_" columns
+write_covariate_imputation_code(dat)
+
+# Or use tidyselect helpers
+vars <- c("X_factor_variable", "X_numeric_variable")
+write_covariate_imputation_code(dat, dplyr::all_of(vars))
 
 }

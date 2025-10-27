@@ -7,7 +7,10 @@
 #' dummy variable (with suffix `_missing`) is created for each input.
 #'
 #' @param data A data frame or tibble.
-#' @param ... Unquoted variable names to generate imputation code for.
+#' @param ... Columns to generate imputation code for for. You can specify them
+#'   unquoted (e.g., `age`, `income`) or using selection helpers such as
+#'   [dplyr::all_of()] or [tidyselect::starts_with()].
+#'   If left empty, all `"X_"` columns are used.
 #'
 #' @details
 #' This function prints imputation code to the console that you can copy–paste
@@ -25,25 +28,33 @@
 #' # Generate imputation code
 #' write_covariate_imputation_code(dat, X_factor_variable, X_numeric_variable)
 #'
+#' # Or default to all "X_" columns
+#' write_covariate_imputation_code(dat)
+#'
+#' # Or use tidyselect helpers
+#' vars <- c("X_factor_variable", "X_numeric_variable")
+#' write_covariate_imputation_code(dat, dplyr::all_of(vars))
+#'
 #' @export
 write_covariate_imputation_code <- function(data, ...) {
   # Capture the dataset name as a string
   data_name <- rlang::as_name(rlang::ensym(data))
 
-  # Capture variable names
-  vars <- rlang::enquos(...)
+  # Evaluate column selection; supports unquoted names, all_of(), or nothing
+  sel <- eval_select(expr(c(...)), data)
+  varnames <- names(sel)
 
-  # If no variables explicitly specified, select all X_ columns excluding _nona/_missing
-  if (length(vars) == 0) {
+  # If no columns explicitly provided, fall back to X_* variables
+  if (length(varnames) == 0) {
     varnames <- names(data)
-    varnames <- varnames[startsWith(varnames, "X_") &
-                           !grepl("(_nona|_missing)$", varnames)]
-  } else {
-    varnames <- purrr::map_chr(vars, rlang::as_name)
+    varnames <- varnames[
+      startsWith(varnames, "X_") &
+        !grepl("(_nona|_missing)$", varnames)
+    ]
   }
 
   if (length(varnames) == 0) {
-    warning("No variables selected for imputation.")
+    warning("No variables selected for missingness analysis.")
     return(invisible(NULL))
   }
 
@@ -82,7 +93,10 @@ write_covariate_imputation_code <- function(data, ...) {
 #' dummy variables (with suffix `_missing`) is created for selected variables.
 #'
 #' @param data A data frame or tibble.
-#' @param ... Unquoted variable names to generate missingness dummy variables for
+#' @param ... Columns to generate missingness dummy variables for. You can specify them
+#'   unquoted (e.g., `age`, `income`) or using selection helpers such as
+#'   [dplyr::all_of()] or [tidyselect::starts_with()].
+#'   If left empty, all `"X_"` columns are used.
 #'
 #' @details
 #' This function prints mutate code to the console that you can copy–paste
@@ -98,29 +112,38 @@ write_covariate_imputation_code <- function(data, ...) {
 #' )
 #'
 #' # Generate imputation code
-#' write_covariate_imputation_code(dat, X_factor_variable, X_numeric_variable)
+#' write_outcome_missingness_dummies_code(dat, X_factor_variable, X_numeric_variable)
+#'
+#' # Or default to all "X_" columns
+#' write_outcome_missingness_dummies_code(dat)
+#'
+#' # Or use tidyselect helpers
+#' vars <- c("X_pid_3", "X_income", "X_age")
+#' write_outcome_missingness_dummies_code(dat, dplyr::all_of(vars))
 #'
 #' @export
 write_outcome_missingness_dummies_code <- function(data, ...) {
   # Capture the dataset name as a string
   data_name <- rlang::as_name(rlang::ensym(data))
 
-  # Capture variable names
-  vars <- rlang::enquos(...)
+  # Evaluate column selection; supports unquoted names, all_of(), or nothing
+  sel <- eval_select(expr(c(...)), data)
+  varnames <- names(sel)
 
-  # If no variables explicitly specified, select all X_ columns excluding _nona/_missing
-  if (length(vars) == 0) {
+  # If no columns explicitly provided, fall back to X_* variables
+  if (length(varnames) == 0) {
     varnames <- names(data)
-    varnames <- varnames[startsWith(varnames, "Y_") &
-                           !grepl("(_missing)$", varnames)]
-  } else {
-    varnames <- purrr::map_chr(vars, rlang::as_name)
+    varnames <- varnames[
+      startsWith(varnames, "X_") &
+        !grepl("(_nona|_missing)$", varnames)
+    ]
   }
 
   if (length(varnames) == 0) {
-    warning("No variables selected.")
+    warning("No variables selected for missingness analysis.")
     return(invisible(NULL))
   }
+
 
   code_lines <- purrr::map_chr(varnames, function(v) {
     glue::glue("    {v}_missing = if_else(is.na({v}), 1, 0)")
