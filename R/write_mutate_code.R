@@ -76,11 +76,11 @@ write_covariate_imputation_code <- function(data, ..., include_missingness_dummi
     } else{
       if (is.numeric(col)) {
         glue::glue(
-          "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE)),\n",
+          "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE))",
         )
       } else {
         glue::glue(
-          "    {v}_nona = replace_na({v}, mode({v})),\n",
+          "    {v}_nona = replace_na({v}, mode({v}))",
         )
       }
     }
