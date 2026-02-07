@@ -12,17 +12,17 @@ write_outcome_missingness_dummies_code(data, ...)
 \item{...}{Columns to generate missingness dummy variables for. You can specify them
 unquoted (e.g., `age`, `income`) or using selection helpers such as
 [dplyr::all_of()] or [tidyselect::starts_with()].
-If left empty, all `"X_"` columns are used.}
+If left empty, all `"Y_"` columns are used.}
 }
 \value{
 Invisibly returns the generated code as a single string.
 }
 \description{
-Generates tidyverse-style `mutate()` code generate missingness
-dummy variables (with suffix `_missing`) is created for selected variables.
+Generates tidyverse-style `mutate()` code to generate missingness
+dummy variables (with suffix `_missing`) for selected variables.
 }
 \details{
-This function prints mutate code to the console that you can copy–paste
+This function prints mutate code to the console that you can copy-paste
 into your cleaning script. It does not create the variables itself.
 }
 \examples{
@@ -32,14 +32,14 @@ dat <- data.frame(
    Y_behavior = rep(c(0, 1, NA), c(100, 50, 50))
 )
 
-# Generate imputation code
-write_outcome_missingness_dummies_code(dat, X_factor_variable, X_numeric_variable)
+# Generate missingness dummy code
+write_outcome_missingness_dummies_code(dat, Y_attitude, Y_behavior)
 
-# Or default to all "X_" columns
+# Or default to all "Y_" columns
 write_outcome_missingness_dummies_code(dat)
 
 # Or use tidyselect helpers
-vars <- c("X_pid_3", "X_income", "X_age")
+vars <- c("Y_attitude", "Y_behavior")
 write_outcome_missingness_dummies_code(dat, dplyr::all_of(vars))
 
 }

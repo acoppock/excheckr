@@ -7,13 +7,15 @@
 #' dummy variable (with suffix `_missing`) is created for each input.
 #'
 #' @param data A data frame or tibble.
-#' @param ... Columns to generate imputation code for for. You can specify them
+#' @param ... Columns to generate imputation code for. You can specify them
 #'   unquoted (e.g., `age`, `income`) or using selection helpers such as
 #'   [dplyr::all_of()] or [tidyselect::starts_with()].
 #'   If left empty, all `"X_"` columns are used.
+#' @param include_missingness_dummies Logical. Should missingness dummy variables
+#'   be included in the generated code? Defaults to TRUE.
 #'
 #' @details
-#' This function prints imputation code to the console that you can copy–paste
+#' This function prints imputation code to the console that you can copy-paste
 #' into your analysis script. It does not perform the imputation itself.
 #'
 #' @return Invisibly returns the generated code as a single string.
@@ -35,6 +37,10 @@
 #' vars <- c("X_factor_variable", "X_numeric_variable")
 #' write_covariate_imputation_code(dat, dplyr::all_of(vars))
 #'
+#' @importFrom tidyselect eval_select
+#' @importFrom rlang expr as_name ensym
+#' @importFrom purrr map_chr
+#' @importFrom glue glue
 #' @export
 write_covariate_imputation_code <- function(data, ..., include_missingness_dummies = TRUE) {
   # Capture the dataset name as a string
@@ -46,42 +52,33 @@ write_covariate_imputation_code <- function(data, ..., include_missingness_dummi
 
   # If no columns explicitly provided, fall back to X_* variables
   if (length(varnames) == 0) {
-    varnames <- names(data)
-    varnames <- varnames[
-      startsWith(varnames, "X_") &
-        !grepl("(_nona|_missing)$", varnames)
-    ]
+    varnames <- auto_select_vars(data, prefix = "X_")
   }
 
   if (length(varnames) == 0) {
-    warning("No variables selected for missingness analysis.")
+    warning("No variables selected for imputation.")
     return(invisible(NULL))
   }
 
   code_lines <- purrr::map_chr(varnames, function(v) {
     col <- data[[v]]
-    if(include_missingness_dummies == TRUE){
-
-    if (is.numeric(col)) {
-      glue::glue(
-        "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE)),\n",
-        "    {v}_missing = if_else(is.na({v}), 1, 0)"
-      )
-    } else {
-      glue::glue(
-        "    {v}_nona = replace_na({v}, mode({v})),\n",
-        "    {v}_missing = if_else(is.na({v}), 1, 0)"
-      )
-    }
-    } else{
+    if (include_missingness_dummies) {
       if (is.numeric(col)) {
         glue::glue(
-          "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE))",
+          "    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE)),\n",
+          "    {v}_missing = if_else(is.na({v}), 1, 0)"
         )
       } else {
         glue::glue(
-          "    {v}_nona = replace_na({v}, mode({v}))",
+          "    {v}_nona = replace_na({v}, stat_mode({v})),\n",
+          "    {v}_missing = if_else(is.na({v}), 1, 0)"
         )
+      }
+    } else {
+      if (is.numeric(col)) {
+        glue::glue("    {v}_nona = replace_na({v}, median({v}, na.rm = TRUE))")
+      } else {
+        glue::glue("    {v}_nona = replace_na({v}, stat_mode({v}))")
       }
     }
   })
@@ -102,17 +99,17 @@ write_covariate_imputation_code <- function(data, ..., include_missingness_dummi
 
 #' Write outcome missingness code
 #'
-#' Generates tidyverse-style `mutate()` code generate missingness
-#' dummy variables (with suffix `_missing`) is created for selected variables.
+#' Generates tidyverse-style `mutate()` code to generate missingness
+#' dummy variables (with suffix `_missing`) for selected variables.
 #'
 #' @param data A data frame or tibble.
 #' @param ... Columns to generate missingness dummy variables for. You can specify them
 #'   unquoted (e.g., `age`, `income`) or using selection helpers such as
 #'   [dplyr::all_of()] or [tidyselect::starts_with()].
-#'   If left empty, all `"X_"` columns are used.
+#'   If left empty, all `"Y_"` columns are used.
 #'
 #' @details
-#' This function prints mutate code to the console that you can copy–paste
+#' This function prints mutate code to the console that you can copy-paste
 #' into your cleaning script. It does not create the variables itself.
 #'
 #' @return Invisibly returns the generated code as a single string.
@@ -124,16 +121,20 @@ write_covariate_imputation_code <- function(data, ..., include_missingness_dummi
 #'    Y_behavior = rep(c(0, 1, NA), c(100, 50, 50))
 #' )
 #'
-#' # Generate imputation code
-#' write_outcome_missingness_dummies_code(dat, X_factor_variable, X_numeric_variable)
+#' # Generate missingness dummy code
+#' write_outcome_missingness_dummies_code(dat, Y_attitude, Y_behavior)
 #'
-#' # Or default to all "X_" columns
+#' # Or default to all "Y_" columns
 #' write_outcome_missingness_dummies_code(dat)
 #'
 #' # Or use tidyselect helpers
-#' vars <- c("X_pid_3", "X_income", "X_age")
+#' vars <- c("Y_attitude", "Y_behavior")
 #' write_outcome_missingness_dummies_code(dat, dplyr::all_of(vars))
 #'
+#' @importFrom tidyselect eval_select
+#' @importFrom rlang expr as_name ensym
+#' @importFrom purrr map_chr
+#' @importFrom glue glue
 #' @export
 write_outcome_missingness_dummies_code <- function(data, ...) {
   # Capture the dataset name as a string
@@ -143,20 +144,15 @@ write_outcome_missingness_dummies_code <- function(data, ...) {
   sel <- eval_select(expr(c(...)), data)
   varnames <- names(sel)
 
-  # If no columns explicitly provided, fall back to X_* variables
+  # If no columns explicitly provided, fall back to Y_* variables
   if (length(varnames) == 0) {
-    varnames <- names(data)
-    varnames <- varnames[
-      startsWith(varnames, "X_") &
-        !grepl("(_nona|_missing)$", varnames)
-    ]
+    varnames <- auto_select_vars(data, prefix = "Y_")
   }
 
   if (length(varnames) == 0) {
     warning("No variables selected for missingness analysis.")
     return(invisible(NULL))
   }
-
 
   code_lines <- purrr::map_chr(varnames, function(v) {
     glue::glue("    {v}_missing = if_else(is.na({v}), 1, 0)")
@@ -174,5 +170,3 @@ write_outcome_missingness_dummies_code <- function(data, ...) {
   cat(code, "\n")
   invisible(code)
 }
-
-

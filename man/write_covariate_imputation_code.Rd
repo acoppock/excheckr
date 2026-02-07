@@ -9,10 +9,13 @@ write_covariate_imputation_code(data, ..., include_missingness_dummies = TRUE)
 \arguments{
 \item{data}{A data frame or tibble.}
 
-\item{...}{Columns to generate imputation code for for. You can specify them
+\item{...}{Columns to generate imputation code for. You can specify them
 unquoted (e.g., `age`, `income`) or using selection helpers such as
 [dplyr::all_of()] or [tidyselect::starts_with()].
 If left empty, all `"X_"` columns are used.}
+
+\item{include_missingness_dummies}{Logical. Should missingness dummy variables
+be included in the generated code? Defaults to TRUE.}
 }
 \value{
 Invisibly returns the generated code as a single string.
@@ -25,7 +28,7 @@ In addition to the imputed variable (with suffix `_nona`), a missingness
 dummy variable (with suffix `_missing`) is created for each input.
 }
 \details{
-This function prints imputation code to the console that you can copy–paste
+This function prints imputation code to the console that you can copy-paste
 into your analysis script. It does not perform the imputation itself.
 }
 \examples{

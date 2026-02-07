@@ -1,3 +1,22 @@
+#' Auto-select variables by prefix
+#'
+#' Internal helper to select variables starting with a prefix and excluding
+#' those ending with specified suffixes.
+#'
+#' @param data A data frame
+#' @param prefix Character string prefix to match (default: "X_")
+#' @param exclude_suffixes Character vector of suffixes to exclude (default: c("_nona", "_missing"))
+#'
+#' @return Character vector of variable names
+#' @keywords internal
+#' @noRd
+auto_select_vars <- function(data, prefix = "X_", exclude_suffixes = c("_nona", "_missing")) {
+  varnames <- names(data)
+  pattern <- paste0("(", paste(exclude_suffixes, collapse = "|"), ")$")
+  varnames[startsWith(varnames, prefix) & !grepl(pattern, varnames)]
+}
+
+
 #' Statistical mode
 #'
 #' Computes the most frequent (modal) value of a vector.
@@ -13,12 +32,12 @@
 #' If all values are missing, returns `NA`.
 #'
 #' @examples
-#' mode(c(1, 2, 2, 3, NA))
-#' mode(c("a", "b", "a", "c", "c"))
-#' mode(factor(c("low", "high", "low", NA)))
+#' stat_mode(c(1, 2, 2, 3, NA))
+#' stat_mode(c("a", "b", "a", "c", "c"))
+#' stat_mode(factor(c("low", "high", "low", NA)))
 #'
 #' @export
-mode <- function(x, na.rm = TRUE) {
+stat_mode <- function(x, na.rm = TRUE) {
   if (na.rm) {
     x <- x[!is.na(x)]
   }

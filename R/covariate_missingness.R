@@ -29,14 +29,14 @@
 #' )
 #'
 #' # X_pid_3 and X_income have similar missingness
-#' covariate_missingness(dat, X_pid_3, X_income, X_age)
+#' check_covariate_missingness(dat, X_pid_3, X_income, X_age)
 #'
 #' # Or default to all "X_" columns
-#' covariate_missingness(dat)
+#' check_covariate_missingness(dat)
 #'
 #' # Or use tidyselect helpers
 #' vars <- c("X_pid_3", "X_income", "X_age")
-#' covariate_missingness(dat, dplyr::all_of(vars))
+#' check_covariate_missingness(dat, dplyr::all_of(vars))
 #'
 #' @importFrom tidyselect eval_select
 #' @importFrom rlang expr
@@ -44,18 +44,14 @@
 #' @importFrom tibble tibble
 #' @importFrom ggplot2 ggplot aes geom_tile geom_text scale_fill_viridis_c coord_fixed labs theme_minimal theme element_text
 #' @export
-covariate_missingness <- function(data, ...) {
+check_covariate_missingness <- function(data, ...) {
   # Evaluate column selection; supports unquoted names, all_of(), or nothing
   sel <- eval_select(expr(c(...)), data)
   varnames <- names(sel)
 
   # If no columns explicitly provided, fall back to X_* variables
   if (length(varnames) == 0) {
-    varnames <- names(data)
-    varnames <- varnames[
-      startsWith(varnames, "X_") &
-        !grepl("(_nona|_missing)$", varnames)
-    ]
+    varnames <- auto_select_vars(data, prefix = "X_")
   }
 
   if (length(varnames) == 0) {

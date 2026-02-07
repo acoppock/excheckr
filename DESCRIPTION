@@ -18,12 +18,17 @@ LazyData: true
 RoxygenNote: 7.3.3
 Imports:
     dplyr,
-    ggplot2,
-    rlang,
-    tibble,
-    tidyr,
     tidyselect,
-    viridisLite
-Suggests: 
+    rlang,
+    purrr,
+    glue,
+    tibble,
+    ggplot2,
+    broom
+Suggests:
+    estimatr,
+    knitr,
+    rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+VignetteBuilder: knitr
