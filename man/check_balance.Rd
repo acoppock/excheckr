@@ -55,29 +55,39 @@ models with a cluster-robust sandwich estimator.
 \examples{
 \dontrun{
 library(estimatr)
+library(randomizr)
 
+# Simple randomized experiment with some imbalance
+set.seed(42)
 dat <- data.frame(
-  Z = rbinom(100, 1, 0.5),
-  X_age = rnorm(100, 50, 10),
-  X_gender = sample(c("M", "F"), 100, replace = TRUE),
-  X_party = factor(sample(c("D", "R", "I"), 100, replace = TRUE))
+  Z = rbinom(200, 1, 0.5),
+  X_age = rnorm(200, 50, 10),
+  X_gender = sample(c("M", "F"), 200, replace = TRUE),
+  X_party = factor(sample(c("D", "R", "I"), 200, replace = TRUE))
 )
+# Introduce imbalance: make X_income correlated with treatment
+dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 
 # Default: all X_ covariates with lm_robust
 check_balance(dat, Z)
 
 # Specific covariates
-check_balance(dat, Z, c("X_age", "X_gender"))
+check_balance(dat, Z, c("X_age", "X_income"))
 
-# With clustered standard errors
-dat$cluster_id <- sample(1:10, 100, replace = TRUE)
-check_balance(dat, Z, clusters = cluster_id)
+# Cluster-randomized experiment using cluster_ra
+dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
+dat_cl$X_age <- rnorm(200, 50, 10)
+dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
+dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
+check_balance(dat_cl, Z, clusters = cluster_id)
 
 # Multi-armed treatment
 dat2 <- data.frame(
-  Z = factor(sample(c("C", "T1", "T2"), 100, replace = TRUE)),
-  X_age = rnorm(100), X_income = rnorm(100)
+  Z = factor(sample(c("C", "T1", "T2"), 200, replace = TRUE)),
+  X_age = rnorm(200, 50, 10)
 )
+dat2$X_income <- ifelse(dat2$Z == "T1", 55000, 50000) + rnorm(200, 0, 10000)
 check_balance(dat2, Z)
 }
 
