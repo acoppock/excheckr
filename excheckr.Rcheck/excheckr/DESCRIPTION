@@ -1,0 +1,27 @@
+Package: excheckr
+Type: Package
+Title: Tools for Exploring and Checking Experimental Data
+Version: 0.1.0
+Authors@R: c(
+    person(
+      "Jane", "Doe",
+      email = "jane@example.com",
+      role = c("aut", "cre")
+    )
+  )
+Description: Functions for diagnosing, summarizing, and visualizing missingness 
+    and data integrity in experimental datasets. Includes tools for identifying 
+    missing covariates and producing visual summaries of joint missingness.
+License: MIT + file LICENSE
+Encoding: UTF-8
+RoxygenNote: 7.3.3
+Imports: dplyr, tidyselect, rlang, purrr, glue, tibble, ggplot2, broom
+Suggests: estimatr, knitr, rmarkdown, testthat (>= 3.0.0)
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+NeedsCompilation: no
+Packaged: 2026-02-13 19:37:39 UTC; alexandercoppock
+Author: Jane Doe [aut, cre]
+Maintainer: Jane Doe <jane@example.com>
+Depends: R (>= 4.1.0)
+Built: R 4.5.1; ; 2026-02-13 19:37:42 UTC; unix

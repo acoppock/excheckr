@@ -1,0 +1,341 @@
+---
+title: "Experimental Data Cleaning and Checking Workflow"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Experimental Data Cleaning and Checking Workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Introduction
+
+The `excheckr` package provides tools for cleaning and validating experimental data. This vignette demonstrates a complete workflow for a randomized experiment, showing how to:
+
+1. Inspect and visualize covariate missingness
+2. Generate and apply imputation code
+3. Create outcome missingness indicators
+4. Check for balance across treatment conditions
+5. Check for differential attrition
+
+## Setup
+
+```{r setup}
+library(excheckr)
+library(tidyverse)
+library(estimatr)
+
+set.seed(2024)
+```
+
+# Simulating Experimental Data
+
+Let's create a realistic experimental dataset with:
+- Treatment assignment (`Z`)
+- Covariates with some missingness (`X_*`)
+- Outcomes with differential missingness (`Y_*`)
+
+```{r simulate-data}
+n <- 500
+
+# Treatment assignment (randomized)
+dat <- data.frame(
+  Z = rbinom(n, 1, 0.5),
+  cluster_id = sample(1:25, n, replace = TRUE)
+)
+
+# Covariates with realistic missingness patterns
+dat <- dat |>
+  mutate(
+    # Demographics
+    X_age = rnorm(n, 45, 15),
+    X_gender = sample(c("Male", "Female", "Other"), n, replace = TRUE, 
+                      prob = c(0.48, 0.48, 0.04)),
+    X_income = exp(rnorm(n, 11, 0.8)) * 1000,
+    
+    # Political variables
+    X_party = factor(sample(c("Democrat", "Republican", "Independent"), n, 
+                           replace = TRUE, prob = c(0.35, 0.30, 0.35))),
+    X_ideology = sample(1:7, n, replace = TRUE),
+    
+    # Education
+    X_education = factor(sample(c("HS", "Some College", "BA", "Graduate"), n,
+                               replace = TRUE, prob = c(0.25, 0.30, 0.30, 0.15)))
+  )
+
+# Introduce MCAR missingness in covariates
+dat$X_age[sample(1:n, 25)] <- NA
+dat$X_income[sample(1:n, 40)] <- NA
+dat$X_party[sample(1:n, 30)] <- NA
+dat$X_ideology[sample(1:n, 35)] <- NA
+
+# Outcomes
+# Y_attitude: treatment increases missingness slightly (differential attrition)
+# Y_behavior: no differential attrition
+dat <- dat |>
+  mutate(
+    Y_attitude_latent = 3 + 0.5 * Z + 0.01 * X_age + rnorm(n),
+    Y_behavior_latent = 0.3 + 0.2 * Z + rnorm(n, 0, 0.5)
+  )
+
+# Create missingness in outcomes
+# Y_attitude: 25% missing in control, 35% missing in treatment (differential!)
+miss_attitude <- rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.25))
+dat$Y_attitude <- ifelse(miss_attitude == 1, NA, dat$Y_attitude_latent)
+
+# Y_behavior: 20% missing in both groups (no differential attrition)
+miss_behavior <- rbinom(n, 1, 0.20)
+dat$Y_behavior <- ifelse(miss_behavior == 1, NA, dat$Y_behavior_latent)
+
+# Remove latent variables
+dat <- dat |> select(-Y_attitude_latent, -Y_behavior_latent)
+
+# View first few rows
+head(dat)
+```
+
+# Step 1: Inspect Covariate Missingness
+
+Before imputing, we should understand the patterns of missingness in our covariates.
+
+```{r check-missingness}
+# Check missingness patterns
+check_covariate_missingness(dat)
+```
+
+The summary shows:
+- `X_income` has the most missingness (8%)
+- `X_ideology` and `X_party` also have notable missingness
+- The heatmap shows joint missingness patterns
+
+The diagonal shows univariate missingness, while off-diagonal cells show cases missing both variables. High off-diagonal values suggest missingness may not be completely at random.
+
+# Step 2: Generate and Apply Imputation Code
+
+Now we'll generate code to impute missing covariates. The `write_*_code()` functions print code that you can review and customize before running.
+
+```{r generate-imputation-code}
+# Generate imputation code for all X_ variables
+write_covariate_imputation_code(dat)
+```
+
+This generates tidyverse code that:
+- Imputes numeric variables with their median
+- Imputes categorical variables with their mode
+- Creates missingness indicator variables (`_missing`)
+- Creates imputed versions (`_nona`)
+
+Now let's apply this imputation:
+
+```{r apply-imputation}
+dat <-
+  dat |>
+  mutate(
+    X_age_nona = replace_na(X_age, median(X_age, na.rm = TRUE)),
+    X_age_missing = if_else(is.na(X_age), 1, 0),
+    X_gender_nona = replace_na(X_gender, stat_mode(X_gender)),
+    X_gender_missing = if_else(is.na(X_gender), 1, 0),
+    X_income_nona = replace_na(X_income, median(X_income, na.rm = TRUE)),
+    X_income_missing = if_else(is.na(X_income), 1, 0),
+    X_party_nona = replace_na(X_party, stat_mode(X_party)),
+    X_party_missing = if_else(is.na(X_party), 1, 0),
+    X_ideology_nona = replace_na(X_ideology, median(X_ideology, na.rm = TRUE)),
+    X_ideology_missing = if_else(is.na(X_ideology), 1, 0),
+    X_education_nona = replace_na(X_education, stat_mode(X_education)),
+    X_education_missing = if_else(is.na(X_education), 1, 0)
+  )
+
+# Verify no missingness in imputed variables
+dat |>
+  summarize(
+    across(ends_with("_nona"), ~sum(is.na(.)))
+  )
+```
+
+Perfect! All imputed variables have zero missing values.
+
+# Step 3: Create Outcome Missingness Indicators
+
+For outcomes, we typically don't impute. Instead, we create missingness indicators to check for differential attrition.
+
+```{r generate-outcome-missing}
+# Generate code for outcome missingness indicators
+write_outcome_missingness_dummies_code(dat)
+```
+
+Apply this code:
+
+```{r apply-outcome-missing}
+dat <- 
+  dat |>
+  mutate(
+    Y_attitude_missing = if_else(is.na(Y_attitude), 1, 0),
+    Y_behavior_missing = if_else(is.na(Y_behavior), 1, 0)
+  )
+
+# Check missingness rates by treatment
+dat |>
+  group_by(Z) |>
+  summarize(
+    n = n(),
+    attitude_missing_rate = mean(Y_attitude_missing),
+    behavior_missing_rate = mean(Y_behavior_missing)
+  )
+```
+
+We can see differential missingness in `Y_attitude` (35% in treatment vs 25% in control) but not in `Y_behavior` (20% in both groups).
+
+# Step 4: Check Balance
+
+Before analyzing treatment effects, we should verify that randomization successfully balanced covariates across treatment conditions.
+
+```{r check-balance}
+# Check balance on imputed covariates
+balance_results <- check_balance(
+  dat, 
+  treatment = Z,
+  covariates = c("X_age_nona", "X_income_nona", "X_ideology_nona", 
+                 "X_gender", "X_party_nona", "X_education"),
+  clusters = cluster_id,
+  se_type = "CR2"
+)
+```
+
+The results show the coefficient from regressing each covariate on treatment. For categorical variables, you'll see multiple rows (one per level, excluding the reference category).
+
+Key things to look for:
+- Coefficients close to zero (treatment doesn't predict covariates)
+- Non-significant p-values
+- For categorical variables, check each level
+
+We can also generate code to do this manually:
+
+```{r generate-balance-code}
+write_balance_check_code(
+  dat,
+  treatment = Z,
+  covariates = c("X_age_nona", "X_income_nona"),
+  clusters = cluster_id,
+  se_type = "CR2"
+)
+```
+
+# Step 5: Check for Differential Attrition
+
+Differential attrition occurs when treatment affects the probability of outcome missingness. This can bias treatment effect estimates.
+
+```{r check-attrition}
+# Check if treatment predicts outcome missingness
+attrition_results <- check_attrition(
+  dat,
+  treatment = Z,
+  clusters = cluster_id,
+  se_type = "CR2"
+)
+```
+
+The results show:
+- **Y_attitude_missing**: Significant positive coefficient (~0.10, p < 0.05), indicating differential attrition. Treatment increases missingness by about 10 percentage points.
+- **Y_behavior_missing**: Non-significant coefficient, indicating no differential attrition.
+
+We can also generate the code:
+
+```{r generate-attrition-code}
+write_attrition_check_code(
+  dat,
+  treatment = Z,
+  clusters = cluster_id,
+  se_type = "CR2"
+)
+```
+
+# Step 6: Check Missingness Indicator Balance
+
+A more stringent check: are the missingness indicators themselves balanced? This tests whether treatment affects who is missing on covariates.
+
+```{r check-missing-balance}
+# Check if treatment predicts covariate missingness
+missing_balance <- check_balance(
+  dat,
+  treatment = Z,
+  covariates = c("X_age_missing", "X_income_missing", 
+                 "X_party_missing", "X_ideology_missing"),
+  clusters = cluster_id,
+  se_type = "CR2"
+)
+```
+
+If these are balanced, it suggests that missingness in covariates is not related to treatment assignment, which supports the assumption that our imputation approach is valid.
+
+# Complete Workflow Summary
+
+Here's the recommended workflow for experimental data:
+
+## 1. Initial Data Inspection
+```r
+check_covariate_missingness(dat)
+```
+
+## 2. Impute Covariates
+```r
+# Generate code
+write_covariate_imputation_code(dat)
+
+# Review and apply the generated code
+dat <- dat |>
+  mutate(
+    # ... paste generated code here ...
+  )
+```
+
+## 3. Create Outcome Missingness Indicators
+```r
+# Generate code
+write_outcome_missingness_dummies_code(dat)
+
+# Apply code
+dat <- dat |>
+  mutate(
+    # ... paste generated code here ...
+  )
+```
+
+## 4. Validate the Experiment
+```r
+# Check covariate balance
+check_balance(dat, Z)
+
+# Check for differential attrition
+check_attrition(dat, Z)
+
+# Check missingness indicator balance (optional but recommended)
+check_balance(dat, Z, covariates = ends_with("_missing"))
+```
+
+## 5. Address Issues
+- **Imbalanced covariates**: Consider covariate adjustment in your analysis
+- **Differential attrition**: Report as a limitation; consider bounds analysis or weighting
+- **Imbalanced missingness indicators**: May suggest MNAR (missing not at random); consider sensitivity analyses
+
+# Conclusion
+
+The `excheckr` package streamlines the process of cleaning and validating experimental data by:
+
+1. **Generating reproducible code** with `write_*_code()` functions that you can review before applying
+2. **Running diagnostic checks** with `check_*()` functions that produce tidy, publication-ready results
+3. **Following best practices** for handling missingness in experimental data
+
+This workflow helps ensure your experimental analysis is:
+- **Transparent**: All data transformations are explicit
+- **Reproducible**: Generated code can be saved and reused
+- **Valid**: Balance and attrition checks catch potential issues
+
+For more information on individual functions, see their help pages (e.g., `?check_balance`).
