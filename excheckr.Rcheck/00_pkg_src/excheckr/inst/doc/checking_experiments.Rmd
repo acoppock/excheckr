@@ -32,7 +32,6 @@ The `excheckr` package provides tools for cleaning and validating experimental d
 library(excheckr)
 library(tidyverse)
 library(estimatr)
-library(randomizr)
 
 set.seed(2024)
 ```
@@ -47,28 +46,26 @@ Let's create a realistic experimental dataset with:
 ```{r simulate-data}
 n <- 500
 
-# Cluster-randomized experiment: 25 clusters of 20 units each
+# Treatment assignment (randomized)
 dat <- data.frame(
-  cluster_id = rep(1:25, each = 20)
+  Z = rbinom(n, 1, 0.5),
+  cluster_id = sample(1:25, n, replace = TRUE)
 )
 
-# Treatment assigned at the cluster level using cluster_ra
-dat$Z <- cluster_ra(clusters = dat$cluster_id)
-
-# Covariates (pre-treatment, so they don't depend on Z)
+# Covariates with realistic missingness patterns
 dat <- dat |>
   mutate(
     # Demographics
     X_age = rnorm(n, 45, 15),
-    X_gender = sample(c("Male", "Female", "Other"), n, replace = TRUE,
+    X_gender = sample(c("Male", "Female", "Other"), n, replace = TRUE, 
                       prob = c(0.48, 0.48, 0.04)),
     X_income = exp(rnorm(n, 11, 0.8)) * 1000,
-
+    
     # Political variables
-    X_party = factor(sample(c("Democrat", "Republican", "Independent"), n,
+    X_party = factor(sample(c("Democrat", "Republican", "Independent"), n, 
                            replace = TRUE, prob = c(0.35, 0.30, 0.35))),
     X_ideology = sample(1:7, n, replace = TRUE),
-
+    
     # Education
     X_education = factor(sample(c("HS", "Some College", "BA", "Graduate"), n,
                                replace = TRUE, prob = c(0.25, 0.30, 0.30, 0.15)))
@@ -80,9 +77,9 @@ dat$X_income[sample(1:n, 40)] <- NA
 dat$X_party[sample(1:n, 30)] <- NA
 dat$X_ideology[sample(1:n, 35)] <- NA
 
-# Outcomes built from treatment assignment
-# Y_attitude: treatment effect of 0.5, with differential attrition
-# Y_behavior: treatment effect of 0.2, no differential attrition
+# Outcomes
+# Y_attitude: treatment increases missingness slightly (differential attrition)
+# Y_behavior: no differential attrition
 dat <- dat |>
   mutate(
     Y_attitude_latent = 3 + 0.5 * Z + 0.01 * X_age + rnorm(n),

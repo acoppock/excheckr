@@ -36,39 +36,29 @@
 #' @examples
 #' \dontrun{
 #' library(estimatr)
-#' library(randomizr)
 #'
-#' # Simple randomized experiment with some imbalance
-#' set.seed(42)
 #' dat <- data.frame(
-#'   Z = rbinom(200, 1, 0.5),
-#'   X_age = rnorm(200, 50, 10),
-#'   X_gender = sample(c("M", "F"), 200, replace = TRUE),
-#'   X_party = factor(sample(c("D", "R", "I"), 200, replace = TRUE))
+#'   Z = rbinom(100, 1, 0.5),
+#'   X_age = rnorm(100, 50, 10),
+#'   X_gender = sample(c("M", "F"), 100, replace = TRUE),
+#'   X_party = factor(sample(c("D", "R", "I"), 100, replace = TRUE))
 #' )
-#' # Introduce imbalance: make X_income correlated with treatment
-#' dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 #'
 #' # Default: all X_ covariates with lm_robust
 #' check_balance(dat, Z)
 #'
 #' # Specific covariates
-#' check_balance(dat, Z, c("X_age", "X_income"))
+#' check_balance(dat, Z, c("X_age", "X_gender"))
 #'
-#' # Cluster-randomized experiment using cluster_ra
-#' dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-#' dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-#' dat_cl$X_age <- rnorm(200, 50, 10)
-#' dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
-#' dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
-#' check_balance(dat_cl, Z, clusters = cluster_id)
+#' # With clustered standard errors
+#' dat$cluster_id <- sample(1:10, 100, replace = TRUE)
+#' check_balance(dat, Z, clusters = cluster_id)
 #'
 #' # Multi-armed treatment
 #' dat2 <- data.frame(
-#'   Z = factor(sample(c("C", "T1", "T2"), 200, replace = TRUE)),
-#'   X_age = rnorm(200, 50, 10)
+#'   Z = factor(sample(c("C", "T1", "T2"), 100, replace = TRUE)),
+#'   X_age = rnorm(100), X_income = rnorm(100)
 #' )
-#' dat2$X_income <- ifelse(dat2$Z == "T1", 55000, 50000) + rnorm(200, 0, 10000)
 #' check_balance(dat2, Z)
 #' }
 #'
@@ -249,27 +239,13 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
 #'
 #' @examples
 #' \dontrun{
-#' library(estimatr)
-#' library(randomizr)
-#'
-#' set.seed(42)
 #' dat <- data.frame(
-#'   Z = rbinom(200, 1, 0.5),
-#'   X_age = rnorm(200, 50, 10),
-#'   X_gender = sample(c("M", "F"), 200, replace = TRUE)
+#'   Z = rbinom(100, 1, 0.5),
+#'   X_age = rnorm(100, 50, 10),
+#'   X_gender = sample(c("M", "F"), 100, replace = TRUE)
 #' )
-#' # Introduce imbalance in X_income
-#' dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 #'
 #' write_balance_check_code(dat, Z)
-#'
-#' # Cluster-randomized experiment
-#' dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-#' dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-#' dat_cl$X_age <- rnorm(200, 50, 10)
-#' dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
-#'
-#' write_balance_check_code(dat_cl, Z, clusters = cluster_id)
 #' }
 #'
 #' @importFrom rlang ensym as_name
@@ -305,12 +281,11 @@ write_balance_check_code <- function(data, treatment, covariates = NULL, .method
     ""
   }
 
-  method_name <- sub("^.*::", "", deparse(substitute(.method)))
+  method_name <- deparse(substitute(.method))
 
   # Ensure treatment is factor for multi-arm detection
   z_col <- data[[treatment_name]]
   z_levels <- if (is.factor(z_col)) levels(z_col) else unique(z_col)
-  is_multiarm <- length(z_levels) > 2
 
   # Generate covariate-by-covariate code
   code_lines <- vapply(varnames, function(v) {
@@ -319,7 +294,7 @@ write_balance_check_code <- function(data, treatment, covariates = NULL, .method
     if (is.numeric(col)) {
       glue::glue(
         "# Balance check for {v}\n",
-        "glance({method_name}({v} ~ {treatment_name}, data = {data_name}{extra_args}))"
+        "broom::glance({method_name}({v} ~ {treatment_name}, data = {data_name}{extra_args}))"
       )
     } else {
       if (!is.factor(col)) col <- as.factor(col)
@@ -331,7 +306,7 @@ write_balance_check_code <- function(data, treatment, covariates = NULL, .method
         glue::glue(
           "# Balance check for {v} (level: {lev})\n",
           "{data_name}${dummy_name} <- as.integer({data_name}${v} == '{lev}')\n",
-          "glance({method_name}({dummy_name} ~ {treatment_name}, data = {data_name}{extra_args}))"
+          "broom::glance({method_name}({dummy_name} ~ {treatment_name}, data = {data_name}{extra_args}))"
         )
       }, character(1))
 
@@ -340,39 +315,11 @@ write_balance_check_code <- function(data, treatment, covariates = NULL, .method
   }, character(1))
 
   # Generate joint test code
-  if (!is_multiarm) {
-    # Binary treatment: explicit regression of numeric Z on all covariates
-    # Expand factor covariates to dummies for the joint formula
-    all_rhs <- character(0)
-    for (v in varnames) {
-      col <- data[[v]]
-      if (is.numeric(col)) {
-        all_rhs <- c(all_rhs, v)
-      } else {
-        if (!is.factor(col)) col <- as.factor(col)
-        levels_vec <- levels(col)
-        for (lev in levels_vec[-1]) {
-          clean_lev <- gsub("[^[:alnum:]_]", "_", lev)
-          all_rhs <- c(all_rhs, paste0(v, "_", clean_lev))
-        }
-      }
-    }
-    rhs_str <- paste(all_rhs, collapse = " + ")
-    joint_line <- glue::glue(
-      "# Joint balance test (all covariates)\n",
-      "{data_name}$.Z_numeric <- as.numeric(as.factor({data_name}${treatment_name})) - 1\n",
-      "glance({method_name}(.Z_numeric ~ {rhs_str}, data = {data_name}{extra_args}))"
-    )
-  } else {
-    # Multi-armed treatment: cross-equation Wald test is too complex for inline code
-    covar_arg <- paste0("c(", paste0('"', varnames, '"', collapse = ", "), ")")
-    joint_line <- glue::glue(
-      "# Joint balance test (cross-equation Wald test for multi-armed treatment)\n",
-      "# This test requires a stacked sandwich estimator across K-1 equations;\n",
-      "# use check_balance() which implements it internally\n",
-      "check_balance({data_name}, {treatment_name}, {covar_arg}{extra_args})"
-    )
-  }
+  covar_arg <- paste0("c(", paste0('"', varnames, '"', collapse = ", "), ")")
+  joint_line <- glue::glue(
+    "# Joint balance test (all covariates)\n",
+    "check_balance({data_name}, {treatment_name}, {covar_arg}{extra_args})"
+  )
 
   code <- paste(c(code_lines, joint_line), collapse = "\n\n")
 
