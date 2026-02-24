@@ -25,7 +25,7 @@ test_that("correctly selects Y_columns", {
 
 test_that("dataset name is dynamically used", {
   mydata <- data.frame(Y = c(1, NA, 3))
-  code <- write_outcome_missingness_dummies_code(mydata, X)
+  code <- write_outcome_missingness_dummies_code(mydata, Y)
 
   expect_match(code, "^mydata <-")
 })

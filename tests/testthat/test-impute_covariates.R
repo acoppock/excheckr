@@ -13,7 +13,7 @@ test_that("numeric and factor variables produce correct imputation code", {
     "dat <-
   dat |>
   mutate(
-X_pid_3_nona = replace_na(X_pid_3, mode(X_pid_3)),
+X_pid_3_nona = replace_na(X_pid_3, stat_mode(X_pid_3)),
 X_pid_3_missing = if_else(is.na(X_pid_3), 1, 0),
 X_income_nona = replace_na(X_income, median(X_income, na.rm = TRUE)),
 X_income_missing = if_else(is.na(X_income), 1, 0)
@@ -45,7 +45,7 @@ test_that("function handles all-character input", {
   dat <- data.frame(X_char = c("a", NA, "b"))
   code <- write_covariate_imputation_code(dat, X_char)
 
-  expect_match(code, "mode\\(X_char\\)")
+  expect_match(code, "stat_mode\\(X_char\\)")
 })
 
 test_that("dataset name is dynamically used", {
