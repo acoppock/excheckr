@@ -218,11 +218,6 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
 
   result <- list(covariate_tests = covariate_tests, joint_test = joint_test)
 
-  cat("Covariate-by-covariate balance tests:\n")
-  print(covariate_tests)
-  cat("\nJoint balance test:\n")
-  print(joint_test)
-
   invisible(result)
 }
 

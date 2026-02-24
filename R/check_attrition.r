@@ -190,11 +190,6 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 
     ftest_df <- dplyr::bind_rows(results_ftest)
 
-    cat("Coefficient estimates (Lin, 2013):\n")
-    print(coef_df)
-    cat("\nF-test of joint significance (treatment + treatment x covariate interactions):\n")
-    print(ftest_df)
-
     result <- list(coefficients = coef_df, f_test = ftest_df)
     invisible(result)
 
@@ -218,7 +213,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       form <- stats::as.formula(paste(miss_col, "~", treatment_name))
       fit <- .method(form, data = data, ...)
       tidy_fit <- broom::tidy(fit)
-      tidy_fit <- tidy_fit[tidy_fit$term == treatment_name, ]
+      tidy_fit <- tidy_fit[startsWith(tidy_fit$term, treatment_name), ]
       tidy_fit$outcome <- v
       return(tidy_fit)
     })
@@ -232,7 +227,6 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       dplyr::everything()
     )
 
-    print(result_df)
     invisible(result_df)
   }
 }
