@@ -77,7 +77,10 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
       form <- as.formula(paste(v, "~", treatment_name))
       fit <- .method(form, data = data, ...)
       tidy_fit <- broom::tidy(fit)
-      tidy_fit <- tidy_fit[tidy_fit$term == treatment_name, ]
+      mm <- model.matrix(form, data = data)
+      treatment_idx <- which(attr(terms(form), "term.labels") == treatment_name)
+      treatment_terms <- colnames(mm)[attr(mm, "assign") == treatment_idx]
+      tidy_fit <- tidy_fit[tidy_fit$term %in% treatment_terms, ]
       tidy_fit$covariate <- v
       tidy_fit$level <- NA_character_
       return(tidy_fit)
@@ -100,7 +103,10 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
         form <- as.formula(paste(dummy_name, "~", treatment_name))
         fit <- .method(form, data = data, ...)
         tidy_fit <- broom::tidy(fit)
-        tidy_fit <- tidy_fit[tidy_fit$term == treatment_name, ]
+        mm <- model.matrix(form, data = data)
+        treatment_idx <- which(attr(terms(form), "term.labels") == treatment_name)
+        treatment_terms <- colnames(mm)[attr(mm, "assign") == treatment_idx]
+        tidy_fit <- tidy_fit[tidy_fit$term %in% treatment_terms, ]
         tidy_fit$covariate <- v
         tidy_fit$level <- lev
         return(tidy_fit)

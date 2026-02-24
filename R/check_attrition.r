@@ -88,7 +88,10 @@ check_attrition <- function(data, treatment, outcomes = NULL, .method = estimatr
     form <- as.formula(paste(miss_col, "~", treatment_name))
     fit <- .method(form, data = data, ...)
     tidy_fit <- broom::tidy(fit)
-    tidy_fit <- tidy_fit[tidy_fit$term == treatment_name, ]
+    mm <- model.matrix(form, data = data)
+    treatment_idx <- which(attr(terms(form), "term.labels") == treatment_name)
+    treatment_terms <- colnames(mm)[attr(mm, "assign") == treatment_idx]
+    tidy_fit <- tidy_fit[tidy_fit$term %in% treatment_terms, ]
     tidy_fit$outcome <- v
     return(tidy_fit)
   })
