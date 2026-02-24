@@ -96,6 +96,22 @@ test_that("produces no console output", {
   expect_silent(check_balance(dat, Z))
 })
 
+# --- Singular matrix robustness -----------------------------------------------
+
+test_that("constant covariate within group returns NA joint_test with a warning", {
+  n <- 30
+  dat <- data.frame(
+    Z     = rep(c("control", "treat1", "treat2"), n / 3),
+    X_age = rep(50, n)  # zero variance: all same value
+  )
+
+  expect_warning(res <- check_balance(dat, Z))
+
+  expect_equal(nrow(res$joint_test), 1)
+  expect_true(is.na(res$joint_test$F_stat))
+  expect_true(is.na(res$joint_test$p_value))
+})
+
 # --- Edge cases ----------------------------------------------------------------
 
 test_that("warns and returns NULL when no covariates are found", {

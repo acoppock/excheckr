@@ -163,7 +163,21 @@ cross_equation_wald_test <- function(data, treatment_name, covariate_cols,
   }
 
   # Bread matrix for each equation: solve(X'X)
-  XtX_inv <- solve(crossprod(X))
+  na_result <- tibble::tibble(
+    F_stat  = NA_real_,
+    df1     = NA_integer_,
+    df2     = NA_integer_,
+    p_value = NA_real_,
+    nobs    = as.integer(n)
+  )
+  XtX_inv <- tryCatch(
+    solve(crossprod(X)),
+    error = function(e) NULL
+  )
+  if (is.null(XtX_inv)) {
+    warning("Joint balance test not estimable: singular covariate matrix (constant covariate within group).")
+    return(na_result)
+  }
 
   # Build stacked sandwich variance-covariance matrix
   # Stack order: covariate coefficients only (exclude intercept) across K-1 equations
@@ -214,7 +228,14 @@ cross_equation_wald_test <- function(data, treatment_name, covariate_cols,
   }
 
   # Wald F-test
-  W <- as.numeric(t(beta_stacked) %*% solve(V_full) %*% beta_stacked)
+  W <- tryCatch(
+    as.numeric(t(beta_stacked) %*% solve(V_full) %*% beta_stacked),
+    error = function(e) NULL
+  )
+  if (is.null(W)) {
+    warning("Joint balance test not estimable: singular sandwich matrix.")
+    return(na_result)
+  }
   F_stat <- W / q
 
   # Degrees of freedom
