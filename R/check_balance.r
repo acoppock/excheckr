@@ -10,6 +10,9 @@
 #'   using tidyselect helpers. If left empty, all `"X_"` columns are used.
 #' @param .method Regression function to use (default: `estimatr::lm_robust`).
 #'   Must accept formula and data arguments.
+#' @param quiet Logical. If \code{TRUE}, suppresses all console output (default
+#'   \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
+#'   \code{map()} or similar.
 #' @param ... Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).
 #'
 #' @return A list with two elements:
@@ -79,7 +82,7 @@
 #' @importFrom tibble tibble
 #' @importFrom stats as.formula model.matrix model.frame complete.cases pf coef fitted.values
 #' @export
-check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust, ...) {
+check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust, quiet = FALSE, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
@@ -217,6 +220,13 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
   }
 
   result <- list(covariate_tests = covariate_tests, joint_test = joint_test)
+
+  if (!quiet) {
+    cat("Covariate-by-covariate balance tests:\n")
+    print(covariate_tests)
+    cat("\nJoint balance test:\n")
+    print(joint_test)
+  }
 
   invisible(result)
 }

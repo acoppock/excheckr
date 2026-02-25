@@ -14,6 +14,9 @@
 #'   (missingness ~ covariates).
 #' @param .method Regression function to use (default: `estimatr::lm_robust`).
 #'   Must accept formula and data arguments.
+#' @param quiet Logical. If \code{TRUE}, suppresses all console output (default
+#'   \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
+#'   \code{map()} or similar.
 #' @param ... Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).
 #'
 #' @return When \code{covariates} is \code{NULL}, a tibble with one row per outcome
@@ -79,21 +82,21 @@
 #' }
 #'
 #' @importFrom dplyr bind_rows select
-#' @importFrom broom tidy
+#' @importFrom broom tidy glance
 #' @importFrom rlang ensym as_name expr
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
-#' @importFrom stats coef vcov df.residual pf
+#' @importFrom stats coef vcov df.residual pf as.formula
 #' @export
 check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
-                            .method = estimatr::lm_robust, ...) {
+                            .method = estimatr::lm_robust, quiet = FALSE, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   # Handle outcome selection
   if (is.null(substitute(outcomes))) {
-    # No outcomes specified - use Y_* columns
-    varnames <- auto_select_vars(data, prefix = "Y_")
+    # No outcomes specified - use all Y columns (including bare "Y")
+    varnames <- auto_select_vars(data, prefix = "Y")
   } else if (is.character(outcomes)) {
     # Character vector provided
     varnames <- outcomes
@@ -190,6 +193,14 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 
     ftest_df <- dplyr::bind_rows(results_ftest)
 
+
+    if (!quiet) {
+      cat("Coefficient estimates (Lin, 2013):\n")
+      print(coef_df)
+      cat("\nF-test of joint significance (treatment + treatment x covariate interactions):\n")
+      print(ftest_df)
+    }
+
     result <- list(coefficients = coef_df, f_test = ftest_df)
     invisible(result)
 
@@ -209,24 +220,37 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
         data[[miss_col]] <- as.integer(is.na(data[[v]]))
       }
 
-      # Regress missingness ~ treatment
+      # If no attrition at all, return trivial result immediately
+      miss_vals <- data[[miss_col]]
+      if (all(miss_vals == 0, na.rm = TRUE)) {
+        return(tibble::tibble(
+          outcome = v,
+          F_stat  = 0,
+          df1     = NA_integer_,
+          df2     = NA_integer_,
+          p_value = 1,
+          nobs    = as.integer(sum(!is.na(miss_vals)))
+        ))
+      }
+
+      # Regress missingness ~ treatment; use omnibus F-test so multi-arm
+      # factor treatments (3+ levels) are handled correctly
       form <- stats::as.formula(paste(miss_col, "~", treatment_name))
       fit <- .method(form, data = data, ...)
-      tidy_fit <- broom::tidy(fit)
-      tidy_fit <- tidy_fit[startsWith(tidy_fit$term, treatment_name), ]
-      tidy_fit$outcome <- v
-      return(tidy_fit)
+      gl <- broom::glance(fit)
+      tibble::tibble(
+        outcome = v,
+        F_stat  = gl$statistic,
+        df1     = as.integer(gl$df),
+        df2     = as.integer(gl$df.residual),
+        p_value = gl$p.value,
+        nobs    = as.integer(gl$nobs)
+      )
     })
 
     result_df <- dplyr::bind_rows(results)
 
-    # Reorder columns for clarity
-    result_df <- dplyr::select(
-      result_df,
-      outcome,
-      dplyr::everything()
-    )
-
+    if (!quiet) print(result_df)
     invisible(result_df)
   }
 }

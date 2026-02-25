@@ -9,6 +9,7 @@ check_balance(
   treatment,
   covariates = NULL,
   .method = estimatr::lm_robust,
+  quiet = FALSE,
   ...
 )
 }
@@ -22,6 +23,10 @@ using tidyselect helpers. If left empty, all `"X_"` columns are used.}
 
 \item{.method}{Regression function to use (default: `estimatr::lm_robust`).
 Must accept formula and data arguments.}
+
+\item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
+\code{FALSE}). Set to \code{TRUE} when calling programmatically inside
+\code{map()} or similar.}
 
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }
