@@ -9,7 +9,9 @@ check_balance(
   treatment,
   covariates = NULL,
   .method = estimatr::lm_robust,
-  quiet = FALSE,
+  declaration = NULL,
+  sims = 1000,
+  quiet = TRUE,
   ...
 )
 }
@@ -24,6 +26,15 @@ using tidyselect helpers. If left empty, all `"X_"` columns are used.}
 \item{.method}{Regression function to use (default: `estimatr::lm_robust`).
 Must accept formula and data arguments.}
 
+\item{declaration}{Optional. A \code{randomizr} declaration object (e.g.,
+from \code{randomizr::declare_ra}). When provided, the joint test uses
+randomization inference via \code{ri2::conduct_ri} instead of the
+parametric test. This is recommended for clustered designs or any design
+where exact inference is desired.}
+
+\item{sims}{Integer. Number of simulations for randomization inference
+(default: 1000). Only used when \code{declaration} is provided.}
+
 \item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
 \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
 \code{map()} or similar.}
@@ -36,7 +47,7 @@ A list with two elements:
     \item{covariate_tests}{A tibble with one row per covariate (or covariate
       level for factors), containing the F-test from regressing each covariate
       on treatment. Columns: covariate, level, F_stat, df1, df2, p_value, nobs.}
-    \item{joint_test}{A tibble with a single row containing the joint F-test
+    \item{joint_test}{A tibble with a single row containing the joint test
       of all covariates predicting treatment. Columns: F_stat, df1, df2, p_value, nobs.}
   }
 }
@@ -52,10 +63,16 @@ for multi-armed designs).
 For factor/character covariates, creates dummy variables for each level
 (excluding the first level as reference) and regresses each dummy on treatment.
 
-The joint test regresses treatment on all covariates simultaneously. For binary
-treatment, this is a single regression with an F-test. For multi-armed treatment
-(3+ levels), this uses a cross-equation Wald test across K-1 linear probability
-models with a cluster-robust sandwich estimator.
+The joint test strategy depends on the number of treatment arms and whether
+a \code{declaration} is provided:
+\itemize{
+  \item Binary treatment, no declaration: F-test from regressing numeric
+    treatment on all covariates via \code{.method}.
+  \item Multi-armed treatment, no declaration: multinomial likelihood-ratio
+    test via \code{nnet::multinom}.
+  \item Any treatment with declaration: randomization inference using the
+    multinomial LR statistic as the test function, via \code{ri2::conduct_ri}.
+}
 }
 \examples{
 \dontrun{
@@ -79,21 +96,17 @@ check_balance(dat, Z)
 # Specific covariates
 check_balance(dat, Z, c("X_age", "X_income"))
 
-# Cluster-randomized experiment using cluster_ra
-dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-dat_cl$X_age <- rnorm(200, 50, 10)
-dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
-dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
-check_balance(dat_cl, Z, clusters = cluster_id)
-
-# Multi-armed treatment
+# Multi-armed treatment (uses multinomial LR test)
 dat2 <- data.frame(
   Z = factor(sample(c("C", "T1", "T2"), 200, replace = TRUE)),
   X_age = rnorm(200, 50, 10)
 )
 dat2$X_income <- ifelse(dat2$Z == "T1", 55000, 50000) + rnorm(200, 0, 10000)
 check_balance(dat2, Z)
+
+# Randomization inference with a declaration
+check_balance(dat2, Z,
+  declaration = declare_ra(N = 200, conditions = c("C", "T1", "T2")))
 }
 
 }

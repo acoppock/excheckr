@@ -89,7 +89,7 @@
 #' @importFrom stats coef vcov df.residual pf as.formula
 #' @export
 check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
-                            .method = estimatr::lm_robust, quiet = FALSE, ...) {
+                            .method = estimatr::lm_robust, quiet = TRUE, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 

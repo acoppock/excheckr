@@ -10,7 +10,7 @@ check_attrition(
   outcomes = NULL,
   covariates = NULL,
   .method = estimatr::lm_robust,
-  quiet = FALSE,
+  quiet = TRUE,
   ...
 )
 }

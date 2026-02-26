@@ -103,6 +103,145 @@ stat_mode <- function(x, na.rm = TRUE) {
 }
 
 
+#' Multinomial likelihood-ratio joint balance test
+#'
+#' Fits a multinomial logistic regression of treatment on covariates via
+#' \code{nnet::multinom}, compares to a null (intercept-only) model using a
+#' likelihood-ratio test, and returns a chi-squared p-value.
+#'
+#' @param data A data frame.
+#' @param treatment_name Character. Name of the treatment column (must be a factor).
+#' @param covariate_cols Character vector of expanded covariate column names.
+#'
+#' @return A tibble with columns F_stat (LR/q), df1 (q), df2 (NA), p_value, nobs.
+#' @keywords internal
+#' @noRd
+#' @importFrom stats as.formula logLik pchisq complete.cases
+#' @importFrom tibble tibble
+multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
+  # Restrict to complete cases
+  keep_cols <- c(treatment_name, covariate_cols)
+  cc <- stats::complete.cases(data[, keep_cols, drop = FALSE])
+  data <- data[cc, , drop = FALSE]
+  n <- nrow(data)
+
+  z_factor <- data[[treatment_name]]
+  if (!is.factor(z_factor)) z_factor <- as.factor(z_factor)
+  K <- length(levels(z_factor))
+  p_covar <- length(covariate_cols)
+  q <- (K - 1) * p_covar
+
+  na_result <- tibble::tibble(
+    F_stat  = NA_real_,
+    df1     = NA_integer_,
+    df2     = NA_integer_,
+    p_value = NA_real_,
+    nobs    = as.integer(n)
+  )
+
+  # Check for zero-variance covariates
+  for (cname in covariate_cols) {
+    if (length(unique(data[[cname]])) <= 1) {
+      warning("Joint balance test not estimable: constant covariate within group.")
+      return(na_result)
+    }
+  }
+
+  bt_cols <- paste0("`", covariate_cols, "`")
+  full_formula <- stats::as.formula(
+    paste(treatment_name, "~", paste(bt_cols, collapse = " + "))
+  )
+  null_formula <- stats::as.formula(paste(treatment_name, "~ 1"))
+
+  fit_full <- tryCatch(
+    suppressMessages(nnet::multinom(full_formula, data = data, trace = FALSE)),
+    error = function(e) NULL
+  )
+  if (is.null(fit_full)) {
+    warning("Joint balance test not estimable: multinomial model failed to converge.")
+    return(na_result)
+  }
+
+  fit_null <- suppressMessages(nnet::multinom(null_formula, data = data, trace = FALSE))
+
+  lr_stat <- as.numeric(-2 * (stats::logLik(fit_null) - stats::logLik(fit_full)))
+  p_value <- stats::pchisq(lr_stat, df = q, lower.tail = FALSE)
+
+  tibble::tibble(
+    F_stat  = lr_stat / q,
+    df1     = as.integer(q),
+    df2     = NA_integer_,
+    p_value = p_value,
+    nobs    = as.integer(n)
+  )
+}
+
+
+#' Randomization inference joint balance test
+#'
+#' Computes a multinomial likelihood-ratio test statistic and obtains a p-value
+#' via randomization inference using \code{ri2::conduct_ri}.
+#'
+#' @param data A data frame.
+#' @param treatment_name Character. Name of the treatment column.
+#' @param covariate_cols Character vector of expanded covariate column names.
+#' @param declaration A \code{randomizr} declaration object.
+#' @param sims Integer. Number of RI simulations.
+#'
+#' @return A tibble with columns F_stat (observed LR), df1 (NA), df2 (NA), p_value, nobs.
+#' @keywords internal
+#' @noRd
+#' @importFrom stats as.formula logLik
+#' @importFrom tibble tibble
+ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sims = 1000) {
+  if (!requireNamespace("ri2", quietly = TRUE)) {
+    stop("Package 'ri2' is required for randomization inference. Install it with install.packages('ri2').")
+  }
+
+  n <- nrow(data)
+
+  bt_cols <- paste0("`", covariate_cols, "`")
+  full_formula <- stats::as.formula(
+    paste(treatment_name, "~", paste(bt_cols, collapse = " + "))
+  )
+  null_formula <- stats::as.formula(paste(treatment_name, "~ 1"))
+
+  # Test function: multinomial LR statistic
+  test_function <- function(data) {
+    fit_full <- suppressMessages(
+      nnet::multinom(full_formula, data = data, trace = FALSE)
+    )
+    fit_null <- suppressMessages(
+      nnet::multinom(null_formula, data = data, trace = FALSE)
+    )
+    as.numeric(-2 * (stats::logLik(fit_null) - stats::logLik(fit_full)))
+  }
+
+  ri_out <- ri2::conduct_ri(
+    test_function = test_function,
+    declaration = declaration,
+    assignment = treatment_name,
+    data = data,
+    sims = sims,
+    p = "upper"
+  )
+
+  ri_summary <- summary(ri_out)
+  p_value <- ri_summary$upper_p_value[1]
+
+  # Compute observed statistic
+  obs_stat <- test_function(data)
+
+  tibble::tibble(
+    F_stat  = obs_stat,
+    df1     = NA_integer_,
+    df2     = NA_integer_,
+    p_value = p_value,
+    nobs    = as.integer(n)
+  )
+}
+
+
 #' Cross-equation Wald test for multi-armed balance
 #'
 #' Fits K-1 linear probability models (one per non-reference treatment level)

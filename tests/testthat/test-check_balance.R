@@ -74,7 +74,7 @@ test_that("factor covariate produces one row per non-reference level", {
 
 # --- Multi-armed treatment ----------------------------------------------------
 
-test_that("three-arm treatment produces a valid joint_test", {
+test_that("three-arm treatment produces a valid joint_test (multinomial LR)", {
   set.seed(2)
   n <- 150
   dat <- data.frame(
@@ -87,6 +87,20 @@ test_that("three-arm treatment produces a valid joint_test", {
   expect_equal(nrow(res$joint_test), 1)
   expect_true(res$joint_test$F_stat >= 0)
   expect_true(res$joint_test$p_value >= 0 & res$joint_test$p_value <= 1)
+  # df2 should be NA for multinomial LR test
+  expect_true(is.na(res$joint_test$df2))
+})
+
+test_that("binary treatment joint test is unchanged (F-test)", {
+  dat <- make_balance_dat()
+  res <- check_balance(dat, Z)
+
+  expect_equal(nrow(res$joint_test), 1)
+  expect_true(res$joint_test$F_stat >= 0)
+  expect_true(res$joint_test$p_value >= 0 & res$joint_test$p_value <= 1)
+  # df2 should NOT be NA for binary F-test
+
+  expect_false(is.na(res$joint_test$df2))
 })
 
 # --- Console output ------------------------------------------------------------
@@ -119,4 +133,26 @@ test_that("warns and returns NULL when no covariates are found", {
 
   expect_warning(res <- check_balance(dat, Z), "No covariates selected")
   expect_null(res)
+})
+
+# --- Randomization inference --------------------------------------------------
+
+test_that("RI path with declaration returns a valid p-value", {
+  skip_if_not_installed("ri2")
+  skip_if_not_installed("randomizr")
+
+  set.seed(3)
+  n <- 60
+  dat <- data.frame(
+    Z     = randomizr::complete_ra(n, conditions = c("C", "T1", "T2")),
+    X_age = rnorm(n, 50, 10)
+  )
+
+  decl <- randomizr::declare_ra(N = n, conditions = c("C", "T1", "T2"))
+  res <- check_balance(dat, Z, declaration = decl, sims = 100)
+
+  expect_equal(nrow(res$joint_test), 1)
+  expect_true(res$joint_test$p_value >= 0 & res$joint_test$p_value <= 1)
+  expect_true(is.na(res$joint_test$df1))
+  expect_true(is.na(res$joint_test$df2))
 })

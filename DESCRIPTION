@@ -24,10 +24,13 @@ Imports:
     glue,
     tibble,
     ggplot2,
-    broom
+    broom,
+    nnet
 Suggests:
+    DeclareDesign,
     estimatr,
     randomizr,
+    ri2,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)

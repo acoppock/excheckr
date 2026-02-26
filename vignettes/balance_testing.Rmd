@@ -1,0 +1,185 @@
+---
+title: "Balance Test Calibration"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Balance Test Calibration}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4
+)
+```
+
+```{r setup, message = FALSE}
+library(excheckr)
+library(DeclareDesign)
+library(estimatr)
+library(tidyverse)
+```
+
+## Balance testing in a three-arm trial
+
+Consider a simple experiment with three treatment arms (Control, T1, T2), one continuous covariate (age), and one categorical covariate (party ID). Under random assignment, covariates should be independent of treatment, so balance tests should only reject at the nominal rate.
+
+`check_balance()` returns two sets of tests: covariate-by-covariate F-tests (regressing each covariate on treatment dummies) and a joint test of all covariates simultaneously.
+
+```{r one-shot}
+set.seed(42)
+
+dat <- fabricate(
+  N = 200,
+  X_age   = rnorm(N, 50, 10),
+  X_party = sample(c("D", "R", "I"), N, replace = TRUE),
+  Z = complete_ra(N, conditions = c("Control", "T1", "T2"))
+)
+
+res <- check_balance(dat, Z, covariates = c("X_age", "X_party"), quiet = FALSE)
+```
+
+For multi-armed treatments, the covariate-by-covariate tests are F-tests with `K - 1` numerator degrees of freedom (jointly testing all treatment dummies). The joint test uses a multinomial likelihood-ratio test: it fits a multinomial logistic regression of treatment on all covariates via `nnet::multinom` and compares to an intercept-only model.
+
+## Simulation: is the joint test well-calibrated?
+
+Under the null of random assignment, a well-calibrated test should reject at rate $\alpha$ when tested at level $\alpha$. We check this by simulation, varying the number of treatment arms.
+
+```{r balance-handler}
+balance_handler <- function(data) {
+  res <- check_balance(data, Z, covariates = c("X_age", "X_party"), quiet = TRUE)
+  bind_rows(
+    res$covariate_tests |>
+      transmute(
+        term = ifelse(is.na(level), covariate, paste0(covariate, "_", level)),
+        estimate = F_stat,
+        p.value = p_value
+      ),
+    res$joint_test |>
+      transmute(term = "joint", estimate = F_stat, p.value = p_value)
+  )
+}
+```
+
+### Three-arm trial
+
+```{r design-3arm}
+design_3arm <-
+  declare_model(
+    N = 200,
+    X_age   = rnorm(N, 50, 10),
+    X_party = sample(c("D", "R", "I"), N, replace = TRUE)
+  ) +
+  declare_assignment(
+    Z = complete_ra(N, conditions = c("Control", "T1", "T2"))
+  ) +
+  declare_estimator(
+    handler = label_estimator(balance_handler),
+    label = "balance_test"
+  )
+```
+
+```{r sim-3arm, cache = TRUE}
+set.seed(343)
+sims_3arm <- simulate_design(design_3arm, sims = 1000) |>
+  mutate(K = 3)
+```
+
+### Ten-arm trial
+
+```{r design-10arm}
+design_10arm <-
+  declare_model(
+    N = 500,
+    X_age   = rnorm(N, 50, 10),
+    X_party = sample(c("D", "R", "I"), N, replace = TRUE)
+  ) +
+  declare_assignment(
+    Z = complete_ra(N, conditions = paste0("T", 1:10))
+  ) +
+  declare_estimator(
+    handler = label_estimator(balance_handler),
+    label = "balance_test"
+  )
+```
+
+```{r sim-10arm, cache = TRUE}
+set.seed(343)
+sims_10arm <- simulate_design(design_10arm, sims = 1000) |>
+  mutate(K = 10)
+```
+
+## Results
+
+```{r rejection-rates}
+sims <- bind_rows(sims_3arm, sims_10arm)
+
+rejection_rates <-
+  sims |>
+  group_by(K, term) |>
+  summarize(
+    rejection_rate = mean(p.value <= 0.05),
+    mean_F = mean(estimate),
+    .groups = "drop"
+  ) |>
+  mutate(nominal_rate = 0.05)
+
+rejection_rates
+```
+
+All tests --- covariate-by-covariate and joint --- should be close to the nominal 5% rate in both designs. The multinomial LR joint test is well-calibrated even with many treatment arms.
+
+```{r pvalue-hist, fig.height = 6}
+sims |>
+  mutate(K = paste0(K, " arms")) |>
+  ggplot(aes(x = p.value)) +
+  geom_histogram(breaks = seq(0, 1, 0.05), fill = "steelblue", color = "white") +
+  geom_hline(aes(yintercept = after_stat(y)),
+             stat = "summary", fun = function(x) length(x) / 20,
+             data = ~filter(.x, term == "joint"),
+             linetype = "dashed", color = "firebrick") +
+  facet_grid(K ~ term) +
+  labs(x = "p-value", y = "Count",
+       title = "Balance test p-values under the null of random assignment",
+       subtitle = "Dashed line = expected count under uniformity") +
+  theme_minimal()
+```
+
+## Randomization inference for clustered designs
+
+When the design involves clustering or other features that make parametric assumptions questionable, you can supply a `declaration` to obtain exact p-values via randomization inference. The RI path uses the same multinomial LR statistic but obtains p-values by permutation under the declared randomization scheme.
+
+```{r ri-example, eval = requireNamespace("ri2", quietly = TRUE)}
+library(randomizr)
+
+set.seed(44)
+n_clusters <- 30
+cluster_size <- 10
+n <- n_clusters * cluster_size
+
+dat_cl <- fabricate(
+  N = n,
+  cluster_id = rep(1:n_clusters, each = cluster_size),
+  X_age   = rnorm(N, 50, 10),
+  X_party = sample(c("D", "R", "I"), N, replace = TRUE),
+  Z = cluster_ra(clusters = cluster_id, conditions = c("C", "T1", "T2"))
+)
+
+decl <- declare_ra(
+  clusters = dat_cl$cluster_id,
+  conditions = c("C", "T1", "T2")
+)
+
+res_ri <- check_balance(
+  dat_cl, Z,
+  covariates = c("X_age", "X_party"),
+  declaration = decl,
+  sims = 500,
+  quiet = FALSE
+)
+```
+
+The RI joint test p-value is exact by construction: it compares the observed multinomial LR statistic to its randomization distribution under the declared assignment mechanism.
