@@ -139,6 +139,18 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     nobs    = as.integer(n)
   )
 
+  # Check for empty treatment groups after complete-case filtering
+  level_counts <- table(z_factor)
+  empty_groups <- names(level_counts)[level_counts == 0]
+  if (length(empty_groups) > 0) {
+    warning(paste(
+      "Joint balance test not estimable: treatment group(s)",
+      paste(empty_groups, collapse = ", "),
+      "empty after removing incomplete cases."
+    ))
+    return(na_result)
+  }
+
   # Check for zero-variance covariates
   for (cname in covariate_cols) {
     if (length(unique(data[[cname]])) <= 1) {
@@ -154,7 +166,7 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
   null_formula <- stats::as.formula(paste(treatment_name, "~ 1"))
 
   fit_full <- tryCatch(
-    suppressMessages(nnet::multinom(full_formula, data = data, trace = FALSE)),
+    suppressWarnings(nnet::multinom(full_formula, data = data, trace = FALSE)),
     error = function(e) NULL
   )
   if (is.null(fit_full)) {
@@ -162,7 +174,7 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     return(na_result)
   }
 
-  fit_null <- suppressMessages(nnet::multinom(null_formula, data = data, trace = FALSE))
+  fit_null <- suppressWarnings(nnet::multinom(null_formula, data = data, trace = FALSE))
 
   lr_stat <- as.numeric(-2 * (stats::logLik(fit_null) - stats::logLik(fit_full)))
   p_value <- stats::pchisq(lr_stat, df = q, lower.tail = FALSE)

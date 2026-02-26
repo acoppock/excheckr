@@ -105,8 +105,18 @@ test_that("binary treatment joint test is unchanged (F-test)", {
 
 # --- Console output ------------------------------------------------------------
 
-test_that("produces no console output", {
+test_that("produces no console output (binary treatment)", {
   dat <- make_balance_dat()
+  expect_silent(check_balance(dat, Z))
+})
+
+test_that("produces no console output (multi-arm treatment)", {
+  set.seed(2)
+  n <- 150
+  dat <- data.frame(
+    Z     = rep(c("control", "treat1", "treat2"), n / 3),
+    X_age = rnorm(n, 50, 10)
+  )
   expect_silent(check_balance(dat, Z))
 })
 
@@ -120,6 +130,26 @@ test_that("constant covariate within group returns NA joint_test with a warning"
   )
 
   expect_warning(res <- check_balance(dat, Z))
+
+  expect_equal(nrow(res$joint_test), 1)
+  expect_true(is.na(res$joint_test$F_stat))
+  expect_true(is.na(res$joint_test$p_value))
+})
+
+# --- Empty treatment arm after complete-case filtering ------------------------
+
+test_that("empty arm after complete-case filtering returns NA joint_test with a warning", {
+  set.seed(1)
+  n <- 30
+  dat <- data.frame(
+    Z     = factor(c(rep("control", 10), rep("treat1", 10), rep("treat2", 10))),
+    X_age = c(rnorm(10, 50, 10), rnorm(10, 50, 10), rep(NA_real_, 10))
+  )
+
+  expect_warning(
+    res <- check_balance(dat, Z),
+    regexp = "empty after removing incomplete cases"
+  )
 
   expect_equal(nrow(res$joint_test), 1)
   expect_true(is.na(res$joint_test$F_stat))
