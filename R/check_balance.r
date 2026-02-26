@@ -100,7 +100,9 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
   if (is.null(substitute(covariates))) {
     varnames <- auto_select_vars(data, prefix = "X_")
   } else if (is.character(covariates)) {
-    varnames <- covariates
+    # Empty character vector falls back to auto-selection (e.g. when no
+    # OLS covariates were extracted from the reanalysis script)
+    varnames <- if (length(covariates) > 0) covariates else auto_select_vars(data, prefix = "X_")
   } else {
     sel <- eval_select(rlang::expr(covariates), data)
     varnames <- names(sel)
@@ -146,11 +148,13 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
       form <- stats::as.formula(paste(paste0("`", v, "`"), "~", treatment_name))
       fit <- .method(form, data = data, ...)
       gl <- broom::glance(fit)
+      # Use fit$k - 1 for df1: glance() returns a data.frame whose $df
+      # partial-matches $df.residual, so gl$df is unreliable.
       tibble::tibble(
         covariate = v,
         level = NA_character_,
         F_stat = gl$statistic,
-        df1 = as.integer(gl$df),
+        df1 = as.integer(fit$k - 1L),
         df2 = as.integer(gl$df.residual),
         p_value = gl$p.value,
         nobs = as.integer(gl$nobs)
@@ -172,7 +176,7 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
           covariate = v,
           level = lev,
           F_stat = gl$statistic,
-          df1 = as.integer(gl$df),
+          df1 = as.integer(fit$k - 1L),
           df2 = as.integer(gl$df.residual),
           p_value = gl$p.value,
           nobs = as.integer(gl$nobs)
@@ -221,7 +225,7 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     gl <- broom::glance(fit_joint)
     joint_test <- tibble::tibble(
       F_stat = gl$statistic,
-      df1 = as.integer(gl$df),
+      df1 = as.integer(fit_joint$k - 1L),
       df2 = as.integer(gl$df.residual),
       p_value = gl$p.value,
       nobs = as.integer(gl$nobs)

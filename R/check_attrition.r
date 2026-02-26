@@ -238,10 +238,12 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       form <- stats::as.formula(paste(miss_col, "~", treatment_name))
       fit <- .method(form, data = data, ...)
       gl <- broom::glance(fit)
+      # Use fit$k - 1 for df1: glance() returns a data.frame whose $df
+      # partial-matches $df.residual, so gl$df is unreliable.
       tibble::tibble(
         outcome = v,
         F_stat  = gl$statistic,
-        df1     = as.integer(gl$df),
+        df1     = as.integer(fit$k - 1L),
         df2     = as.integer(gl$df.residual),
         p_value = gl$p.value,
         nobs    = as.integer(gl$nobs)
