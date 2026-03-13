@@ -150,6 +150,19 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
         analysis_data[[miss_col]] <- as.integer(is.na(analysis_data[[v]]))
       }
 
+      # Short-circuit: no attrition at all → trivial result
+      miss_vals <- analysis_data[[miss_col]]
+      if (all(miss_vals == 0, na.rm = TRUE)) {
+        results_coef[[v]] <- tibble::tibble(
+          outcome = v, term = treatment_name, estimate = 0,
+          std.error = NA_real_, statistic = NA_real_, p.value = 1
+        )
+        results_ftest[[v]] <- tibble::tibble(
+          outcome = v, F_stat = 0, df1 = NA_integer_, df2 = NA_integer_, p_value = 1
+        )
+        next
+      }
+
       # Full model: missingness ~ treatment * (demeaned covariates)
       covar_rhs <- paste(paste0("`", demeaned_names, "`"), collapse = " + ")
       full_formula <- stats::as.formula(
@@ -162,30 +175,46 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       coef_table$outcome <- v
       results_coef[[v]] <- coef_table
 
-      # Wald F-test: jointly test treatment and all treatment:covariate interactions
+      # Wald F-test: jointly test treatment and all treatment:covariate interactions.
+      # Matches exact name (binary Z), factor-level names (Zlevel), and all
+      # interaction terms involving treatment regardless of position.
       all_coef_names <- names(stats::coef(fit_full))
       test_terms <- all_coef_names[
-        all_coef_names == treatment_name |
-        grepl(paste0("^", treatment_name, ":"), all_coef_names) |
-        grepl(paste0(":", treatment_name, "$"), all_coef_names)
+        startsWith(all_coef_names, treatment_name) |
+        grepl(paste0(":", treatment_name), all_coef_names)
       ]
 
       b <- stats::coef(fit_full)[test_terms]
       V <- stats::vcov(fit_full)[test_terms, test_terms]
       q <- length(test_terms)
 
-      W <- as.numeric(t(b) %*% solve(V) %*% b)
-      F_stat <- W / q
       df2 <- stats::df.residual(fit_full)
-      p_value <- stats::pf(F_stat, q, df2, lower.tail = FALSE)
-
-      results_ftest[[v]] <- tibble::tibble(
-        outcome = v,
-        F_stat = F_stat,
-        df1 = as.integer(q),
-        df2 = as.integer(df2),
-        p_value = p_value
+      W <- tryCatch(
+        as.numeric(t(b) %*% solve(V) %*% b),
+        error = function(e) NULL
       )
+
+      if (is.null(W)) {
+        warning(paste("F-test not estimable for outcome:", v,
+                      "(singular covariance matrix — too many covariates or near-collinearity)"))
+        results_ftest[[v]] <- tibble::tibble(
+          outcome = v,
+          F_stat = NA_real_,
+          df1 = as.integer(q),
+          df2 = as.integer(df2),
+          p_value = NA_real_
+        )
+      } else {
+        F_stat <- W / q
+        p_value <- stats::pf(F_stat, q, df2, lower.tail = FALSE)
+        results_ftest[[v]] <- tibble::tibble(
+          outcome = v,
+          F_stat = F_stat,
+          df1 = as.integer(q),
+          df2 = as.integer(df2),
+          p_value = p_value
+        )
+      }
     }
 
     coef_df <- dplyr::bind_rows(results_coef)
