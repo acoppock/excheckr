@@ -65,7 +65,7 @@ dat <- data.frame(
 )
 check_missingness_nona(dat)
 check_missingness_nona(dat, study_id = "my_study")
-check_missingness_nona(dat, covariates = X_age)
+check_missingness_nona(dat, covariates = "X_age")
 check_missingness_nona(dat, nona_suffix = "_imputed")
 
 }

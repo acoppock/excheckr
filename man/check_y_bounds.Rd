@@ -28,8 +28,9 @@ when \code{outcomes} is omitted (default: \code{"Y_"}).}
 
 \item{exclude}{Additional columns to drop from the selection. Supply
 unquoted names or tidyselect helpers (e.g., \code{ends_with("_raw")}),
-or a character vector of exact column names. Applied after \code{outcomes}
-is resolved. \code{NULL} (the default) means no additional exclusions.}
+or a character vector of exact column names. Applied after
+\code{outcomes} is resolved. \code{NULL} (the default) means no
+additional exclusions.}
 }
 \value{
 A tibble with columns \code{variable}, \code{min}, \code{max},
@@ -50,7 +51,6 @@ was selected.
 dat <- data.frame(Y_support = c(0, 0.5, 1), Y_oppose = c(0, 1.2, 0.8))
 check_y_bounds(dat)
 check_y_bounds(dat, study_id = "my_study")
-check_y_bounds(dat, outcomes = Y_support)
-check_y_bounds(dat, exclude = ends_with("_oppose"))
+check_y_bounds(dat, outcomes = "Y_support")
 
 }
