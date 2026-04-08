@@ -67,7 +67,8 @@ scale_by_control <- function(data, treatment, control_value = 0,
       ))
       next
     }
-    data[[paste0(v, "_s")]] <- data[[v]] / ctrl_sd
+    s_name <- paste0(sub("_01$", "", v), "_s")
+    data[[s_name]] <- data[[v]] / ctrl_sd
   }
 
   data
