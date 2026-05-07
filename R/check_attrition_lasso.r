@@ -165,6 +165,27 @@ check_attrition_lasso <- function(
     # ------------------------------------------------------------------ #
     # Simple test: I(missing) ~ Z                                        #
     # ------------------------------------------------------------------ #
+    if (n_missing == 0L) {
+      return(tibble::tibble(
+        outcome             = yc,
+        n_assigned          = n_assigned,
+        n_missing           = 0L,
+        pct_missing         = 0,
+        p_simple            = 1,
+        n_lasso1            = 0L,
+        n_lasso2            = 0L,
+        n_selected          = 0L,
+        selected_covariates = "",
+        df1                 = NA_integer_,
+        epv                 = NA_real_,
+        epv_adequate        = FALSE,
+        p_interacted        = NA_real_,
+        flag_simple         = FALSE,
+        flag_interacted     = FALSE,
+        flag                = FALSE
+      ))
+    }
+
     simple_form <- stats::as.formula(paste("miss ~", treatment_name))
     simple_df   <- cbind(data.frame(miss = miss), data[, treatment_name, drop = FALSE])
     simple_fit  <- .method(simple_form, data = simple_df, ...)
