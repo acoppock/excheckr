@@ -4,8 +4,8 @@ Title: Tools for Exploring and Checking Experimental Data
 Version: 0.1.0
 Authors@R: c(
     person(
-      "Jane", "Doe",
-      email = "jane@example.com",
+      "Alexander", "Coppock",
+      email = "acoppock@gmail.com",
       role = c("aut", "cre")
     )
   )
@@ -29,6 +29,7 @@ Imports:
 Suggests:
     DeclareDesign,
     estimatr,
+    glmnet,
     randomizr,
     ri2,
     knitr,
