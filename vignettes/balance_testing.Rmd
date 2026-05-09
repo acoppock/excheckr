@@ -45,7 +45,7 @@ res <- check_balance(dat, Z, covariates = c("X_age", "X_party"), quiet = FALSE)
 
 For multi-armed treatments, the covariate-by-covariate tests are F-tests with `K - 1` numerator degrees of freedom (jointly testing all treatment dummies). The joint test uses a multinomial likelihood-ratio test: it fits a multinomial logistic regression of treatment on all covariates via `nnet::multinom` and compares to an intercept-only model.
 
-## Simulation: is the joint test well-calibrated?
+## Calibration under the null
 
 Under the null of random assignment, a well-calibrated test should reject at rate $\alpha$ when tested at level $\alpha$. We check this by simulation, varying the number of treatment arms.
 
@@ -131,7 +131,7 @@ rejection_rates <-
 rejection_rates
 ```
 
-All tests --- covariate-by-covariate and joint --- should be close to the nominal 5% rate in both designs. The multinomial LR joint test is well-calibrated even with many treatment arms.
+All tests (covariate-by-covariate and joint) should be close to the nominal 5% rate in both designs. The multinomial LR joint test is well-calibrated even with many treatment arms.
 
 ```{r pvalue-hist, fig.height = 6}
 sims_plot <- sims |> mutate(K = paste0(K, " arms"))

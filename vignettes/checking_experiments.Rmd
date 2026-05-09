@@ -108,7 +108,7 @@ head(dat)
 
 # Step 1: Inspect Covariate Missingness
 
-Before imputing, we should understand the patterns of missingness in our covariates.
+Before imputing, inspect the patterns of missingness in the covariates.
 
 ```{r check-missingness}
 # Check missingness patterns
@@ -131,7 +131,7 @@ Now we'll generate code to impute missing covariates. The `write_*_code()` funct
 write_covariate_imputation_code(dat)
 ```
 
-This generates tidyverse code that:
+The generated code:
 - Imputes numeric variables with their median
 - Imputes categorical variables with their mode
 - Creates missingness indicator variables (`_missing`)
@@ -164,7 +164,7 @@ dat |>
   )
 ```
 
-Perfect! All imputed variables have zero missing values.
+All imputed variables have zero missing values.
 
 # Step 3: Create Outcome Missingness Indicators
 
@@ -277,7 +277,7 @@ missing_balance <- check_balance(
 )
 ```
 
-If these are balanced, it suggests that missingness in covariates is not related to treatment assignment, which supports the assumption that our imputation approach is valid.
+Balance on the missingness indicators supports the assumption that covariate missingness is unrelated to treatment assignment and that the imputation approach is valid.
 
 # Complete Workflow Summary
 

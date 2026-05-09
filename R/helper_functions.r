@@ -80,7 +80,7 @@ auto_select_vars <- function(data, prefix = "X_", exclude_suffixes = c("_nona", 
 #' stat_mode(factor(c("low", "high", "low", NA)))
 #'
 #' # For factor columns, stat_mode returns a length-1 factor with the same levels.
-#' # This is directly compatible with tidyr::replace_na() -- no as.character()
+#' # The result is directly compatible with tidyr::replace_na() -- no as.character()
 #' # conversion needed:
 #' #   replace_na(x, stat_mode(x))
 #' # The base-R equivalent works without any extra packages:
