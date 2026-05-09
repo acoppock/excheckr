@@ -134,13 +134,17 @@ rejection_rates
 All tests --- covariate-by-covariate and joint --- should be close to the nominal 5% rate in both designs. The multinomial LR joint test is well-calibrated even with many treatment arms.
 
 ```{r pvalue-hist, fig.height = 6}
-sims |>
-  mutate(K = paste0(K, " arms")) |>
+sims_plot <- sims |> mutate(K = paste0(K, " arms"))
+
+expected_df <- sims_plot |>
+  filter(term == "joint") |>
+  group_by(K, term) |>
+  summarise(expected = n() / 20, .groups = "drop")
+
+sims_plot |>
   ggplot(aes(x = p.value)) +
   geom_histogram(breaks = seq(0, 1, 0.05), fill = "steelblue", color = "white") +
-  geom_hline(aes(yintercept = after_stat(y)),
-             stat = "summary", fun = function(x) length(x) / 20,
-             data = ~filter(.x, term == "joint"),
+  geom_hline(data = expected_df, aes(yintercept = expected),
              linetype = "dashed", color = "firebrick") +
   facet_grid(K ~ term) +
   labs(x = "p-value", y = "Count",

@@ -3,3 +3,6 @@
 ^\.claude$
 ^Rplots\.pdf$
 ^excheckr_.*\.tar\.gz$
+^LOGFILE\.md$
+^doc$
+^Meta$
