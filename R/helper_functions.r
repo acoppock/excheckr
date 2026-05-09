@@ -59,20 +59,33 @@ auto_select_vars <- function(data, prefix = "X_", exclude_suffixes = c("_nona", 
 #'
 #' Computes the most frequent (modal) value of a vector.
 #'
+#' For factor input, the return value is a length-1 factor with the same levels,
+#' which is directly compatible with \code{tidyr::replace_na()} for
+#' mode-imputation of factor columns.
+#'
 #' @param x A vector (numeric, character, or factor).
 #' @param na.rm Logical. Should missing values be removed before computing
 #'   the mode? Defaults to TRUE.
 #'
 #' @return
 #' The most frequent value of `x`.
-#' If `x` is a factor, the result is returned as a factor with the same levels.
+#' If `x` is a factor, the result is returned as a single-element factor with
+#' the same levels, compatible with \code{tidyr::replace_na()}.
 #' If there are ties, the first occurring mode is returned.
-#' If all values are missing, returns `NA`.
+#' If all values are missing, returns \code{NA}.
 #'
 #' @examples
 #' stat_mode(c(1, 2, 2, 3, NA))
 #' stat_mode(c("a", "b", "a", "c", "c"))
 #' stat_mode(factor(c("low", "high", "low", NA)))
+#'
+#' # For factor columns, stat_mode returns a length-1 factor with the same levels.
+#' # This is directly compatible with tidyr::replace_na() -- no as.character()
+#' # conversion needed:
+#' #   replace_na(x, stat_mode(x))
+#' # The base-R equivalent works without any extra packages:
+#' x <- factor(c("low", "high", "low", NA), levels = c("low", "high"))
+#' x[is.na(x)] <- stat_mode(x)
 #'
 #' @export
 stat_mode <- function(x, na.rm = TRUE) {
