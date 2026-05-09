@@ -30,7 +30,7 @@ The `excheckr` package provides tools for cleaning and validating experimental d
 
 ```{r setup}
 library(excheckr)
-library(tidyverse)
+library(dplyr)
 library(estimatr)
 library(randomizr)
 

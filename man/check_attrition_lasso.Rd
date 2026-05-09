@@ -68,9 +68,7 @@ A tibble with one row per outcome and the following columns:
   }
 }
 \description{
-`r lifecycle::badge("experimental")`
-
-An extension of [check_attrition()] that addresses the events-per-variable
+**Experimental.** An extension of [check_attrition()] that addresses the events-per-variable
 (EPV) problem endemic to the fully-interacted Lin-style attrition model.
 When the full covariate pool is used in the interacted model, df1 grows as
 (n_arms - 1) x (1 + n_covariates), which quickly produces EPV < 10 for
@@ -107,22 +105,23 @@ probability models. Use with awareness that this procedure is novel.
 }
 
 \examples{
-\dontrun{
-set.seed(42)
-n <- 500
-dat <- data.frame(
-  Z       = rbinom(n, 1, 0.5),
-  X_age   = rnorm(n, 50, 10),
-  X_income = rnorm(n, 50000, 10000)
-)
-dat$Y_outcome <- 0.3 * dat$Z + 0.5 * scale(dat$X_age) + rnorm(n)
-# Differential attrition correlated with age in treatment arm
-p_miss <- ifelse(dat$Z == 1, 0.05 + 0.01 * scale(dat$X_age), 0.05)
-dat$Y_outcome[rbinom(n, 1, pmax(0, pmin(1, p_miss))) == 1] <- NA
-
-check_attrition_lasso(dat, Z,
-  outcomes   = "Y_outcome",
-  covariates = c("X_age", "X_income"))
+\donttest{
+# Requires the glmnet package
+if (requireNamespace("glmnet", quietly = TRUE)) {
+  set.seed(42)
+  n <- 500
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    X_income = rnorm(n, 50000, 10000)
+  )
+  dat$Y_outcome <- 0.3 * dat$Z + 0.5 * scale(dat$X_age) + rnorm(n)
+  p_miss <- ifelse(dat$Z == 1, 0.05 + 0.01 * scale(dat$X_age), 0.05)
+  dat$Y_outcome[which(rbinom(n, 1, pmax(0, pmin(1, p_miss))) == 1)] <- NA
+  check_attrition_lasso(dat, Z,
+    outcomes   = "Y_outcome",
+    covariates = c("X_age", "X_income"))
+}
 }
 
 }

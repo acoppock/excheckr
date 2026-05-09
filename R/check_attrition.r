@@ -46,25 +46,17 @@
 #' attrition.
 #'
 #' @examples
-#' \dontrun{
-#' library(estimatr)
-#' library(randomizr)
-#'
 #' set.seed(42)
 #' n <- 200
 #' dat <- data.frame(
-#'   Z = rbinom(n, 1, 0.5),
+#'   Z = rep(c(0L, 1L), n / 2),
 #'   X_age = rnorm(n, 50, 10),
 #'   X_income = rnorm(n, 50000, 10000)
 #' )
-#'
-#' # Y_attitude: differential attrition (treatment increases missingness)
 #' dat$Y_attitude <- rnorm(n)
-#' dat$Y_attitude[rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1] <- NA
-#'
-#' # Y_behavior: no differential attrition (uniform 15% missing)
+#' dat$Y_attitude[which(rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1)] <- NA
 #' dat$Y_behavior <- rnorm(n)
-#' dat$Y_behavior[rbinom(n, 1, 0.15) == 1] <- NA
+#' dat$Y_behavior[which(rbinom(n, 1, 0.15) == 1)] <- NA
 #'
 #' # Simple attrition check (no covariates)
 #' check_attrition(dat, Z)
@@ -72,18 +64,20 @@
 #' # With covariates: Lin model + F-test for differential attrition
 #' check_attrition(dat, Z, covariates = c("X_age", "X_income"))
 #'
-#' # Cluster-randomized experiment with differential attrition
-#' dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-#' dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-#' dat_cl$X_age <- rnorm(n, 50, 10)
-#' dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(n)
-#' dat_cl$Y_outcome[rbinom(n, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1] <- NA
-#' check_attrition(dat_cl, Z, clusters = cluster_id)
+#' \donttest{
+#' # Cluster-randomized experiment (requires randomizr)
+#' if (requireNamespace("randomizr", quietly = TRUE)) {
+#'   dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+#'   dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+#'   dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
+#'   dat_cl$Y_outcome[which(rbinom(200, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1)] <- NA
+#'   check_attrition(dat_cl, Z, clusters = cluster_id)
+#' }
 #' }
 #'
 #' @importFrom dplyr bind_rows select
 #' @importFrom broom tidy glance
-#' @importFrom rlang ensym as_name expr
+#' @importFrom rlang ensym as_name expr enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
 #' @importFrom stats coef vcov df.residual pf as.formula
@@ -94,16 +88,16 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   # Handle outcome selection
-  if (is.null(substitute(outcomes))) {
-    # No outcomes specified - use all Y columns (including bare "Y")
+  outcomes_quo <- rlang::enquo(outcomes)
+  if (rlang::quo_is_null(outcomes_quo)) {
     varnames <- auto_select_vars(data, prefix = "Y")
-  } else if (is.character(outcomes)) {
-    # Character vector provided
-    varnames <- outcomes
   } else {
-    # Tidyselect expression
-    sel <- eval_select(rlang::expr(outcomes), data)
-    varnames <- names(sel)
+    char_val <- tryCatch(rlang::eval_tidy(outcomes_quo), error = function(e) NULL)
+    if (is.character(char_val)) {
+      varnames <- char_val
+    } else {
+      varnames <- names(eval_select(outcomes_quo, data))
+    }
   }
 
   if (length(varnames) == 0) {
@@ -116,11 +110,12 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
   has_covariates <- !is.null(covar_expr)
 
   if (has_covariates) {
-    if (is.character(covariates)) {
-      covar_names <- covariates
+    covariates_quo <- rlang::enquo(covariates)
+    char_cov <- tryCatch(rlang::eval_tidy(covariates_quo), error = function(e) NULL)
+    if (is.character(char_cov)) {
+      covar_names <- char_cov
     } else {
-      sel <- eval_select(rlang::expr(covariates), data)
-      covar_names <- names(sel)
+      covar_names <- names(eval_select(covariates_quo, data))
     }
 
     if (length(covar_names) == 0) {
@@ -196,7 +191,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 
       if (is.null(W)) {
         warning(paste("F-test not estimable for outcome:", v,
-                      "(singular covariance matrix — too many covariates or near-collinearity)"))
+                      "(singular covariance matrix: too many covariates or near-collinearity)"))
         results_ftest[[v]] <- tibble::tibble(
           outcome = v,
           F_stat = NA_real_,
@@ -218,7 +213,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
     }
 
     coef_df <- dplyr::bind_rows(results_coef)
-    coef_df <- dplyr::select(coef_df, outcome, dplyr::everything())
+    coef_df <- dplyr::select(coef_df, "outcome", dplyr::everything())
 
     ftest_df <- dplyr::bind_rows(results_ftest)
 
@@ -306,34 +301,27 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 #' into your analysis script. It does not perform the attrition check itself.
 #'
 #' @examples
-#' \dontrun{
-#' library(estimatr)
-#' library(randomizr)
-#'
 #' set.seed(42)
 #' n <- 200
-#' dat <- data.frame(Z = rbinom(n, 1, 0.5))
-#'
-#' # Y_attitude: differential attrition (treatment increases missingness)
+#' dat <- data.frame(Z = rep(c(0L, 1L), n / 2))
 #' dat$Y_attitude <- rnorm(n)
-#' dat$Y_attitude[rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1] <- NA
-#'
-#' # Y_behavior: no differential attrition
+#' dat$Y_attitude[which(rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1)] <- NA
 #' dat$Y_behavior <- rnorm(n)
-#' dat$Y_behavior[rbinom(n, 1, 0.15) == 1] <- NA
+#' dat$Y_behavior[which(rbinom(n, 1, 0.15) == 1)] <- NA
 #'
 #' write_attrition_check_code(dat, Z)
 #'
-#' # Cluster-randomized experiment
-#' dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-#' dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-#' dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(n)
-#' dat_cl$Y_outcome[rbinom(n, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1] <- NA
-#'
-#' write_attrition_check_code(dat_cl, Z, clusters = cluster_id)
+#' \donttest{
+#' # Cluster-randomized experiment (requires randomizr)
+#' if (requireNamespace("randomizr", quietly = TRUE)) {
+#'   dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+#'   dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+#'   dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
+#'   write_attrition_check_code(dat_cl, Z, clusters = cluster_id)
+#' }
 #' }
 #'
-#' @importFrom rlang ensym as_name
+#' @importFrom rlang ensym as_name enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom glue glue
 #' @export
@@ -343,13 +331,16 @@ write_attrition_check_code <- function(data, treatment, outcomes = NULL, .method
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   # Handle outcome selection
-  if (is.null(substitute(outcomes))) {
+  outcomes_quo <- rlang::enquo(outcomes)
+  if (rlang::quo_is_null(outcomes_quo)) {
     varnames <- auto_select_vars(data, prefix = "Y_")
-  } else if (is.character(outcomes)) {
-    varnames <- outcomes
   } else {
-    sel <- eval_select(rlang::expr(outcomes), data)
-    varnames <- names(sel)
+    char_val <- tryCatch(rlang::eval_tidy(outcomes_quo), error = function(e) NULL)
+    if (is.character(char_val)) {
+      varnames <- char_val
+    } else {
+      varnames <- names(eval_select(outcomes_quo, data))
+    }
   }
 
   if (length(varnames) == 0) {

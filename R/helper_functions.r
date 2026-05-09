@@ -1,3 +1,8 @@
+utils::globalVariables(c(
+  "var1", "var2", "var1_f", "var2_f", "fraction_missing",
+  "treatment_sd", "control_sd"
+))
+
 #' Demean covariates following the Lin (2013) estimator
 #'
 #' Replicates the covariate demeaning procedure used in \code{estimatr::lm_lin}.
@@ -15,7 +20,7 @@ demean_covariates <- function(data, covariates) {
   covar_formula <- stats::as.formula(paste("~", paste(covariates, collapse = " + ")))
   covar_mat <- stats::model.matrix(
     covar_formula,
-    data = stats::model.frame(covar_formula, data, na.action = na.pass)
+    data = stats::model.frame(covar_formula, data, na.action = stats::na.pass)
   )
   # Drop intercept column (following lm_lin)
   covar_mat <- covar_mat[, -1, drop = FALSE]
@@ -250,158 +255,5 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
     df2     = NA_integer_,
     p_value = p_value,
     nobs    = as.integer(n)
-  )
-}
-
-
-#' Cross-equation Wald test for multi-armed balance
-#'
-#' Fits K-1 linear probability models (one per non-reference treatment level)
-#' regressing each treatment dummy on covariates, then computes a joint Wald
-#' F-test using a cross-equation cluster-robust sandwich estimator.
-#'
-#' @param data A data frame.
-#' @param treatment_name Character. Name of the treatment column (must be a factor).
-#' @param covariate_cols Character vector of expanded covariate column names.
-#' @param cluster_col Character or NULL. Name of the cluster column.
-#' @param .method Regression function (default: estimatr::lm_robust).
-#' @param ... Additional arguments passed to .method.
-#'
-#' @return A tibble with columns F_stat, df1, df2, p_value, nobs.
-#' @keywords internal
-#' @noRd
-#' @importFrom stats complete.cases model.matrix fitted.values pf
-#' @importFrom tibble tibble
-cross_equation_wald_test <- function(data, treatment_name, covariate_cols,
-                                     cluster_col = NULL, .method = estimatr::lm_robust, ...) {
-  z_factor <- data[[treatment_name]]
-  if (!is.factor(z_factor)) z_factor <- as.factor(z_factor)
-  z_levels <- levels(z_factor)
-  K <- length(z_levels)
-
-  # Create K-1 treatment dummies (excluding reference level)
-  dummy_names <- character(K - 1)
-  for (k in seq_len(K - 1)) {
-    dname <- paste0(".Z_dum_", k)
-    data[[dname]] <- as.integer(z_factor == z_levels[k + 1])
-    dummy_names[k] <- dname
-  }
-
-  # Restrict to complete cases on covariates + treatment + clusters
-  keep_cols <- c(dummy_names, covariate_cols)
-  if (!is.null(cluster_col)) keep_cols <- c(keep_cols, cluster_col)
-  cc <- stats::complete.cases(data[, keep_cols, drop = FALSE])
-  data <- data[cc, , drop = FALSE]
-  n <- nrow(data)
-
-  # Build covariate model matrix (with intercept)
-  bt_cols <- paste0("`", covariate_cols, "`")
-  covar_formula <- stats::as.formula(paste("~", paste(bt_cols, collapse = " + ")))
-  X <- stats::model.matrix(covar_formula, data = data)
-  p <- ncol(X)  # includes intercept
-
-  # Number of covariate parameters (excluding intercept) per equation
-  p_covar <- p - 1
-
-  # Fit K-1 regressions and collect residuals
-  fits <- vector("list", K - 1)
-  residual_mat <- matrix(NA_real_, nrow = n, ncol = K - 1)
-
-  for (k in seq_len(K - 1)) {
-    form <- stats::as.formula(paste(dummy_names[k], "~", paste(bt_cols, collapse = " + ")))
-    fits[[k]] <- .method(form, data = data, ...)
-    residual_mat[, k] <- data[[dummy_names[k]]] - stats::fitted.values(fits[[k]])
-  }
-
-  # Bread matrix for each equation: solve(X'X)
-  na_result <- tibble::tibble(
-    F_stat  = NA_real_,
-    df1     = NA_integer_,
-    df2     = NA_integer_,
-    p_value = NA_real_,
-    nobs    = as.integer(n)
-  )
-  XtX_inv <- tryCatch(
-    solve(crossprod(X)),
-    error = function(e) NULL
-  )
-  if (is.null(XtX_inv)) {
-    warning("Joint balance test not estimable: singular covariate matrix (constant covariate within group).")
-    return(na_result)
-  }
-
-  # Build stacked sandwich variance-covariance matrix
-  # Stack order: covariate coefficients only (exclude intercept) across K-1 equations
-  # Total dimension: (K-1)*p_covar x (K-1)*p_covar
-  q <- (K - 1) * p_covar
-  V_full <- matrix(0, nrow = q, ncol = q)
-
-  # Indices for covariate params (rows 2:p of each equation's coefficient vector)
-  covar_idx <- 2:p
-
-  for (j in seq_len(K - 1)) {
-    for (k in seq_len(K - 1)) {
-      # Meat for equation pair (j, k)
-      if (is.null(cluster_col)) {
-        meat_jk <- crossprod(X * residual_mat[, j], X * residual_mat[, k])
-        # HC1 correction: n/(n-p)
-        correction <- n / (n - p)
-      } else {
-        clusters <- data[[cluster_col]]
-        G <- length(unique(clusters))
-        Xej <- rowsum(X * residual_mat[, j], clusters)
-        Xek <- rowsum(X * residual_mat[, k], clusters)
-        meat_jk <- crossprod(Xej, Xek)
-        # CR1 correction
-        correction <- (G / (G - 1)) * ((n - 1) / (n - p))
-      }
-
-      # Sandwich for this block: bread %*% meat %*% bread * correction
-      sand_jk <- XtX_inv %*% meat_jk %*% XtX_inv * correction
-
-      # Extract covariate-only submatrix
-      sand_jk_covar <- sand_jk[covar_idx, covar_idx, drop = FALSE]
-
-      # Place into stacked V
-      row_start <- (j - 1) * p_covar + 1
-      row_end <- j * p_covar
-      col_start <- (k - 1) * p_covar + 1
-      col_end <- k * p_covar
-      V_full[row_start:row_end, col_start:col_end] <- sand_jk_covar
-    }
-  }
-
-  # Stack covariate coefficients (exclude intercept) across equations
-  beta_stacked <- numeric(q)
-  for (k in seq_len(K - 1)) {
-    coefs <- stats::coef(fits[[k]])
-    beta_stacked[((k - 1) * p_covar + 1):(k * p_covar)] <- coefs[covar_idx]
-  }
-
-  # Wald F-test
-  W <- tryCatch(
-    as.numeric(t(beta_stacked) %*% solve(V_full) %*% beta_stacked),
-    error = function(e) NULL
-  )
-  if (is.null(W)) {
-    warning("Joint balance test not estimable: singular sandwich matrix.")
-    return(na_result)
-  }
-  F_stat <- W / q
-
-  # Degrees of freedom
-  if (is.null(cluster_col)) {
-    df2 <- n - p
-  } else {
-    df2 <- G - 1
-  }
-  p_value <- stats::pf(F_stat, q, df2, lower.tail = FALSE)
-
-  tibble::tibble(
-    F_stat = F_stat,
-    df1 = as.integer(q),
-    df2 = as.integer(df2),
-    p_value = p_value,
-    nobs = as.integer(n)
   )
 }

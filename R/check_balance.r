@@ -50,19 +50,13 @@
 #' }
 #'
 #' @examples
-#' \dontrun{
-#' library(estimatr)
-#' library(randomizr)
-#'
-#' # Simple randomized experiment with some imbalance
 #' set.seed(42)
 #' dat <- data.frame(
-#'   Z = rbinom(200, 1, 0.5),
+#'   Z = rep(c(0L, 1L), 100),
 #'   X_age = rnorm(200, 50, 10),
 #'   X_gender = sample(c("M", "F"), 200, replace = TRUE),
 #'   X_party = factor(sample(c("D", "R", "I"), 200, replace = TRUE))
 #' )
-#' # Introduce imbalance: make X_income correlated with treatment
 #' dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 #'
 #' # Default: all X_ covariates with lm_robust
@@ -72,21 +66,25 @@
 #' check_balance(dat, Z, c("X_age", "X_income"))
 #'
 #' # Multi-armed treatment (uses multinomial LR test)
+#' set.seed(1)
 #' dat2 <- data.frame(
-#'   Z = factor(sample(c("C", "T1", "T2"), 200, replace = TRUE)),
-#'   X_age = rnorm(200, 50, 10)
+#'   Z = factor(rep(c("C", "T1", "T2"), length.out = 201)),
+#'   X_age = rnorm(201, 50, 10)
 #' )
-#' dat2$X_income <- ifelse(dat2$Z == "T1", 55000, 50000) + rnorm(200, 0, 10000)
 #' check_balance(dat2, Z)
 #'
-#' # Randomization inference with a declaration
-#' check_balance(dat2, Z,
-#'   declaration = declare_ra(N = 200, conditions = c("C", "T1", "T2")))
+#' \donttest{
+#' # Randomization inference with a declaration (requires randomizr and ri2)
+#' if (requireNamespace("randomizr", quietly = TRUE) &&
+#'     requireNamespace("ri2", quietly = TRUE)) {
+#'   decl <- randomizr::declare_ra(N = 201, conditions = c("C", "T1", "T2"))
+#'   check_balance(dat2, Z, declaration = decl, sims = 200)
+#' }
 #' }
 #'
 #' @importFrom dplyr bind_rows select
 #' @importFrom broom tidy glance
-#' @importFrom rlang ensym as_name expr
+#' @importFrom rlang ensym as_name expr enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
 #' @importFrom stats as.formula model.matrix model.frame complete.cases pf coef fitted.values
@@ -97,15 +95,17 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   # Handle covariate selection
-  if (is.null(substitute(covariates))) {
+  covariates_quo <- rlang::enquo(covariates)
+  if (rlang::quo_is_null(covariates_quo)) {
     varnames <- auto_select_vars(data, prefix = "X_")
-  } else if (is.character(covariates)) {
-    # Empty character vector falls back to auto-selection (e.g. when no
-    # OLS covariates were extracted from the reanalysis script)
-    varnames <- if (length(covariates) > 0) covariates else auto_select_vars(data, prefix = "X_")
   } else {
-    sel <- eval_select(rlang::expr(covariates), data)
-    varnames <- names(sel)
+    char_val <- tryCatch(rlang::eval_tidy(covariates_quo), error = function(e) NULL)
+    if (is.character(char_val)) {
+      # Empty character vector falls back to auto-selection
+      varnames <- if (length(char_val) > 0) char_val else auto_select_vars(data, prefix = "X_")
+    } else {
+      varnames <- names(eval_select(covariates_quo, data))
+    }
   }
 
   if (length(varnames) == 0) {
@@ -192,7 +192,7 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
   covar_formula <- stats::as.formula(paste("~", paste(paste0("`", varnames, "`"), collapse = " + ")))
   covar_mat <- stats::model.matrix(
     covar_formula,
-    data = stats::model.frame(covar_formula, data, na.action = na.pass)
+    data = stats::model.frame(covar_formula, data, na.action = stats::na.pass)
   )
   # Drop intercept
   covar_mat <- covar_mat[, -1, drop = FALSE]
@@ -273,31 +273,28 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
 #' since the cross-equation Wald test is too complex to emit as copy-paste code.
 #'
 #' @examples
-#' \dontrun{
-#' library(estimatr)
-#' library(randomizr)
-#'
 #' set.seed(42)
 #' dat <- data.frame(
-#'   Z = rbinom(200, 1, 0.5),
+#'   Z = rep(c(0L, 1L), 100),
 #'   X_age = rnorm(200, 50, 10),
 #'   X_gender = sample(c("M", "F"), 200, replace = TRUE)
 #' )
-#' # Introduce imbalance in X_income
 #' dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 #'
 #' write_balance_check_code(dat, Z)
 #'
-#' # Cluster-randomized experiment
-#' dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-#' dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-#' dat_cl$X_age <- rnorm(200, 50, 10)
-#' dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
-#'
-#' write_balance_check_code(dat_cl, Z, clusters = cluster_id)
+#' \donttest{
+#' # Cluster-randomized experiment (requires randomizr)
+#' if (requireNamespace("randomizr", quietly = TRUE)) {
+#'   dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+#'   dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+#'   dat_cl$X_age <- rnorm(200, 50, 10)
+#'   dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
+#'   write_balance_check_code(dat_cl, Z, clusters = cluster_id)
+#' }
 #' }
 #'
-#' @importFrom rlang ensym as_name
+#' @importFrom rlang ensym as_name enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom glue glue
 #' @export
@@ -307,13 +304,16 @@ write_balance_check_code <- function(data, treatment, covariates = NULL, .method
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   # Handle covariate selection
-  if (is.null(substitute(covariates))) {
+  covariates_quo <- rlang::enquo(covariates)
+  if (rlang::quo_is_null(covariates_quo)) {
     varnames <- auto_select_vars(data, prefix = "X_")
-  } else if (is.character(covariates)) {
-    varnames <- covariates
   } else {
-    sel <- eval_select(rlang::expr(covariates), data)
-    varnames <- names(sel)
+    char_val <- tryCatch(rlang::eval_tidy(covariates_quo), error = function(e) NULL)
+    if (is.character(char_val)) {
+      varnames <- char_val
+    } else {
+      varnames <- names(eval_select(covariates_quo, data))
+    }
   }
 
   if (length(varnames) == 0) {

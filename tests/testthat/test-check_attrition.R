@@ -106,6 +106,36 @@ test_that("explicit character outcomes override auto-selection", {
   expect_false("Y_a" %in% res$outcome)
 })
 
+# --- Tidyselect outcomes path -------------------------------------------------
+
+test_that("tidyselect expression for outcomes works", {
+  set.seed(7)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    Y_a = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5)),
+    Y_b = rnorm(n)
+  )
+  res <- check_attrition(dat, Z, outcomes = dplyr::starts_with("Y_a"))
+  expect_equal(unique(res$outcome), "Y_a")
+})
+
+# --- Tidyselect covariates path -----------------------------------------------
+
+test_that("tidyselect expression for covariates works", {
+  set.seed(8)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5))
+  )
+  res <- check_attrition(dat, Z, outcomes = "Y",
+    covariates = dplyr::starts_with("X_"))
+  expect_type(res, "list")
+  expect_named(res, c("coefficients", "f_test"))
+})
+
 # --- Console output ------------------------------------------------------------
 
 test_that("produces no console output by default", {
@@ -156,4 +186,126 @@ test_that("uses existing Y_missing column when present", {
 
   expect_equal(nrow(res), 1)
   expect_equal(res$outcome, "Y")
+})
+
+# --- Covariates path (Lin model + F-test) -------------------------------------
+
+test_that("covariates path returns list with coefficients and f_test", {
+  set.seed(10)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5))
+  )
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
+
+  expect_type(res, "list")
+  expect_named(res, c("coefficients", "f_test"))
+})
+
+test_that("coefficients tibble has outcome and term columns", {
+  set.seed(11)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5))
+  )
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
+
+  expect_true(all(c("outcome", "term", "estimate") %in% names(res$coefficients)))
+})
+
+test_that("f_test has one row per outcome", {
+  set.seed(12)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y_a = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5)),
+    Y_b = c(rnorm(40), rep(NA, 10), rnorm(40), rep(NA, 10))
+  )
+
+  res <- check_attrition(dat, Z, outcomes = c("Y_a", "Y_b"), covariates = "X_age")
+
+  expect_equal(nrow(res$f_test), 2)
+  expect_setequal(res$f_test$outcome, c("Y_a", "Y_b"))
+})
+
+test_that("covariates path: zero-attrition outcome yields F_stat = 0 and p_value = 1", {
+  set.seed(13)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = rnorm(n)
+  )
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
+
+  frow <- res$f_test[res$f_test$outcome == "Y", ]
+  expect_equal(frow$F_stat, 0)
+  expect_equal(frow$p_value, 1)
+})
+
+test_that("covariates path: quiet = FALSE produces console output", {
+  set.seed(14)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5))
+  )
+
+  expect_output(
+    check_attrition(dat, Z, outcomes = "Y", covariates = "X_age", quiet = FALSE)
+  )
+})
+
+test_that("covariates path: empty character covariates warns and falls back to simple", {
+  set.seed(15)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    Y = c(rnorm(45), rep(NA, 5), rnorm(45), rep(NA, 5))
+  )
+
+  expect_warning(
+    res <- check_attrition(dat, Z, outcomes = "Y", covariates = character(0)),
+    "No covariates selected"
+  )
+  expect_s3_class(res, "data.frame")
+})
+
+test_that("covariates path: uses existing _missing column", {
+  set.seed(16)
+  n <- 100
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = rnorm(n),
+    Y_missing = as.integer(sample(c(0, 1), n, replace = TRUE, prob = c(0.8, 0.2)))
+  )
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
+
+  expect_type(res, "list")
+  expect_named(res, c("coefficients", "f_test"))
+})
+
+test_that("covariates path: f_test p_value is a valid p-value", {
+  set.seed(17)
+  n <- 120
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    Y = c(rnorm(55), rep(NA, 5), rnorm(55), rep(NA, 5))
+  )
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
+
+  expect_true(res$f_test$p_value >= 0 & res$f_test$p_value <= 1)
 })

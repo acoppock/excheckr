@@ -55,3 +55,9 @@ test_that("explicit columns override auto-selection", {
   expect_false(grepl("Y_a_missing", code))
 })
 
+test_that("warns and returns NULL when no Y_ variables found", {
+  dat <- data.frame(X_age = 1:3)
+  expect_warning(res <- write_outcome_missingness_dummies_code(dat), "No variables selected")
+  expect_null(res)
+})
+

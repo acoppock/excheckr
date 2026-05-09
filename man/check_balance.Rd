@@ -75,19 +75,13 @@ a \code{declaration} is provided:
 }
 }
 \examples{
-\dontrun{
-library(estimatr)
-library(randomizr)
-
-# Simple randomized experiment with some imbalance
 set.seed(42)
 dat <- data.frame(
-  Z = rbinom(200, 1, 0.5),
+  Z = rep(c(0L, 1L), 100),
   X_age = rnorm(200, 50, 10),
   X_gender = sample(c("M", "F"), 200, replace = TRUE),
   X_party = factor(sample(c("D", "R", "I"), 200, replace = TRUE))
 )
-# Introduce imbalance: make X_income correlated with treatment
 dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 
 # Default: all X_ covariates with lm_robust
@@ -97,16 +91,20 @@ check_balance(dat, Z)
 check_balance(dat, Z, c("X_age", "X_income"))
 
 # Multi-armed treatment (uses multinomial LR test)
+set.seed(1)
 dat2 <- data.frame(
-  Z = factor(sample(c("C", "T1", "T2"), 200, replace = TRUE)),
-  X_age = rnorm(200, 50, 10)
+  Z = factor(rep(c("C", "T1", "T2"), length.out = 201)),
+  X_age = rnorm(201, 50, 10)
 )
-dat2$X_income <- ifelse(dat2$Z == "T1", 55000, 50000) + rnorm(200, 0, 10000)
 check_balance(dat2, Z)
 
-# Randomization inference with a declaration
-check_balance(dat2, Z,
-  declaration = declare_ra(N = 200, conditions = c("C", "T1", "T2")))
+\donttest{
+# Randomization inference with a declaration (requires randomizr and ri2)
+if (requireNamespace("randomizr", quietly = TRUE) &&
+    requireNamespace("ri2", quietly = TRUE)) {
+  decl <- randomizr::declare_ra(N = 201, conditions = c("C", "T1", "T2"))
+  check_balance(dat2, Z, declaration = decl, sims = 200)
+}
 }
 
 }

@@ -165,6 +165,48 @@ test_that("warns and returns NULL when no covariates are found", {
   expect_null(res)
 })
 
+# --- Tidyselect covariates path -----------------------------------------------
+
+test_that("tidyselect expression for covariates works", {
+  dat <- make_balance_dat()
+  res <- check_balance(dat, Z, covariates = dplyr::starts_with("X_"))
+  expect_setequal(
+    as.character(res$covariate_tests$covariate),
+    c("X_age", "X_income")
+  )
+})
+
+# --- character (non-factor) covariate ----------------------------------------
+
+test_that("character covariate is converted to factor before dummy expansion", {
+  set.seed(5)
+  n <- 120
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_region = rep(c("North", "South", "East"), n / 3)  # character, not factor
+  )
+  res <- check_balance(dat, Z, covariates = "X_region")
+  expect_equal(unique(as.character(res$covariate_tests$covariate)), "X_region")
+  expect_equal(nrow(res$covariate_tests), 2)  # 3 levels → 2 dummies
+})
+
+# --- quiet = FALSE output -----------------------------------------------------
+
+test_that("quiet = FALSE produces output for binary treatment", {
+  dat <- make_balance_dat()
+  expect_output(check_balance(dat, Z, quiet = FALSE))
+})
+
+test_that("quiet = FALSE produces output for multi-arm treatment", {
+  set.seed(2)
+  n <- 150
+  dat <- data.frame(
+    Z = rep(c("control", "treat1", "treat2"), n / 3),
+    X_age = rnorm(n, 50, 10)
+  )
+  expect_output(check_balance(dat, Z, quiet = FALSE))
+})
+
 # --- Randomization inference --------------------------------------------------
 
 test_that("RI path with declaration returns a valid p-value", {

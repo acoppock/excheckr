@@ -20,7 +20,8 @@ knitr::opts_chunk$set(
 library(excheckr)
 library(DeclareDesign)
 library(estimatr)
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
 ```
 
 ## Balance testing in a three-arm trial

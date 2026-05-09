@@ -38,28 +38,25 @@ The joint balance test is generated as a call to \code{check_balance()},
 since the cross-equation Wald test is too complex to emit as copy-paste code.
 }
 \examples{
-\dontrun{
-library(estimatr)
-library(randomizr)
-
 set.seed(42)
 dat <- data.frame(
-  Z = rbinom(200, 1, 0.5),
+  Z = rep(c(0L, 1L), 100),
   X_age = rnorm(200, 50, 10),
   X_gender = sample(c("M", "F"), 200, replace = TRUE)
 )
-# Introduce imbalance in X_income
 dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
 
 write_balance_check_code(dat, Z)
 
-# Cluster-randomized experiment
-dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-dat_cl$X_age <- rnorm(200, 50, 10)
-dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
-
-write_balance_check_code(dat_cl, Z, clusters = cluster_id)
+\donttest{
+# Cluster-randomized experiment (requires randomizr)
+if (requireNamespace("randomizr", quietly = TRUE)) {
+  dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+  dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+  dat_cl$X_age <- rnorm(200, 50, 10)
+  dat_cl$X_income <- 50000 + rnorm(200, 0, 10000)
+  write_balance_check_code(dat_cl, Z, clusters = cluster_id)
+}
 }
 
 }

@@ -36,31 +36,24 @@ This function prints R code to the console that you can copy-paste
 into your analysis script. It does not perform the attrition check itself.
 }
 \examples{
-\dontrun{
-library(estimatr)
-library(randomizr)
-
 set.seed(42)
 n <- 200
-dat <- data.frame(Z = rbinom(n, 1, 0.5))
-
-# Y_attitude: differential attrition (treatment increases missingness)
+dat <- data.frame(Z = rep(c(0L, 1L), n / 2))
 dat$Y_attitude <- rnorm(n)
-dat$Y_attitude[rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1] <- NA
-
-# Y_behavior: no differential attrition
+dat$Y_attitude[which(rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1)] <- NA
 dat$Y_behavior <- rnorm(n)
-dat$Y_behavior[rbinom(n, 1, 0.15) == 1] <- NA
+dat$Y_behavior[which(rbinom(n, 1, 0.15) == 1)] <- NA
 
 write_attrition_check_code(dat, Z)
 
-# Cluster-randomized experiment
-dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(n)
-dat_cl$Y_outcome[rbinom(n, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1] <- NA
-
-write_attrition_check_code(dat_cl, Z, clusters = cluster_id)
+\donttest{
+# Cluster-randomized experiment (requires randomizr)
+if (requireNamespace("randomizr", quietly = TRUE)) {
+  dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+  dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+  dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
+  write_attrition_check_code(dat_cl, Z, clusters = cluster_id)
+}
 }
 
 }

@@ -96,3 +96,23 @@ test_that("explicit columns override auto-selection", {
   expect_false(grepl("X_a_nona", code))
 })
 
+test_that("warns and returns NULL when no variables selected", {
+  dat <- data.frame(Y_outcome = 1:3)
+  expect_warning(res <- write_covariate_imputation_code(dat), "No variables selected")
+  expect_null(res)
+})
+
+test_that("include_missingness_dummies = FALSE omits _missing lines for numeric", {
+  dat <- data.frame(X_num = c(1, NA, 3))
+  code <- write_covariate_imputation_code(dat, X_num, include_missingness_dummies = FALSE)
+  expect_match(code, "X_num_nona")
+  expect_false(grepl("X_num_missing", code))
+})
+
+test_that("include_missingness_dummies = FALSE omits _missing lines for factor", {
+  dat <- data.frame(X_cat = factor(c("A", NA, "B")))
+  code <- write_covariate_imputation_code(dat, X_cat, include_missingness_dummies = FALSE)
+  expect_match(code, "X_cat_nona")
+  expect_false(grepl("X_cat_missing", code))
+})
+

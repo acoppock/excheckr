@@ -42,3 +42,9 @@ test_that("ties return first occurring value", {
   x <- c(1, 2, 1, 2)  # tie between 1 and 2
   expect_equal(stat_mode(x), 1)
 })
+
+test_that("na.rm = FALSE: non-NA value wins when it is more frequent than NA", {
+  x <- c(1, 1, 1, NA, NA)
+  result <- stat_mode(x, na.rm = FALSE)
+  expect_equal(result, 1)
+})

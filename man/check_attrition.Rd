@@ -69,25 +69,17 @@ testing whether treatment and its interactions with covariates jointly predict
 attrition.
 }
 \examples{
-\dontrun{
-library(estimatr)
-library(randomizr)
-
 set.seed(42)
 n <- 200
 dat <- data.frame(
-  Z = rbinom(n, 1, 0.5),
+  Z = rep(c(0L, 1L), n / 2),
   X_age = rnorm(n, 50, 10),
   X_income = rnorm(n, 50000, 10000)
 )
-
-# Y_attitude: differential attrition (treatment increases missingness)
 dat$Y_attitude <- rnorm(n)
-dat$Y_attitude[rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1] <- NA
-
-# Y_behavior: no differential attrition (uniform 15\% missing)
+dat$Y_attitude[which(rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.15)) == 1)] <- NA
 dat$Y_behavior <- rnorm(n)
-dat$Y_behavior[rbinom(n, 1, 0.15) == 1] <- NA
+dat$Y_behavior[which(rbinom(n, 1, 0.15) == 1)] <- NA
 
 # Simple attrition check (no covariates)
 check_attrition(dat, Z)
@@ -95,13 +87,15 @@ check_attrition(dat, Z)
 # With covariates: Lin model + F-test for differential attrition
 check_attrition(dat, Z, covariates = c("X_age", "X_income"))
 
-# Cluster-randomized experiment with differential attrition
-dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
-dat_cl$Z <- cluster_ra(clusters = dat_cl$cluster_id)
-dat_cl$X_age <- rnorm(n, 50, 10)
-dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(n)
-dat_cl$Y_outcome[rbinom(n, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1] <- NA
-check_attrition(dat_cl, Z, clusters = cluster_id)
+\donttest{
+# Cluster-randomized experiment (requires randomizr)
+if (requireNamespace("randomizr", quietly = TRUE)) {
+  dat_cl <- data.frame(cluster_id = rep(1:20, each = 10))
+  dat_cl$Z <- randomizr::cluster_ra(clusters = dat_cl$cluster_id)
+  dat_cl$Y_outcome <- 0.5 * dat_cl$Z + rnorm(200)
+  dat_cl$Y_outcome[which(rbinom(200, 1, ifelse(dat_cl$Z == 1, 0.30, 0.10)) == 1)] <- NA
+  check_attrition(dat_cl, Z, clusters = cluster_id)
+}
 }
 
 }

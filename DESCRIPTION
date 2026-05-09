@@ -18,6 +18,7 @@ LazyData: true
 RoxygenNote: 7.3.3
 Imports:
     dplyr,
+    estimatr,
     tidyselect,
     rlang,
     purrr,
@@ -28,10 +29,10 @@ Imports:
     nnet
 Suggests:
     DeclareDesign,
-    estimatr,
     glmnet,
     randomizr,
     ri2,
+    tidyverse,
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)
