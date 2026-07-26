@@ -14,6 +14,8 @@ Description: Functions for diagnosing, summarizing, and visualizing covariate
     experimental datasets. Includes per-study checks that can be labelled and
     stacked across many studies, plus triage and uniform-reference diagnostics
     for the resulting collection of tests.
+URL: https://alexandercoppock.com/excheckr/, https://github.com/acoppock/excheckr
+BugReports: https://github.com/acoppock/excheckr/issues
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
