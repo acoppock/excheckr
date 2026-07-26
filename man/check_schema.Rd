@@ -11,6 +11,7 @@ check_schema(
   treatment = "Z",
   outcome = "Y",
   covariate = "X_",
+  extra_roles = character(),
   require_weights = TRUE,
   study_id = NULL
 )
@@ -30,6 +31,12 @@ weights, a role column, nor listed here are flagged as possible leaks.}
 outcome, and covariate columns (defaults \code{"Z"}, \code{"Y"},
 \code{"X_"}). \code{treatment} and \code{outcome} match either a bare
 prefix (e.g. \code{"Z"}) or one followed by an underscore (\code{"Z_party"}).}
+
+\item{extra_roles}{Character vector of additional role-column prefixes beyond
+covariate/treatment/outcome, matched as \code{"^<prefix>"}. Use for schemas
+with further role families, e.g. \code{"D_"} for belief / first-stage
+measures in the block-long beliefs schema. These columns count as roles, not
+as contract leaks, and are included in the all-NA check.}
 
 \item{require_weights}{Logical. If \code{TRUE} (the default), a non-NA
 \code{weights} column is required (use \code{weights = 1} when a study has

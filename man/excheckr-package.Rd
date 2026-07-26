@@ -60,6 +60,15 @@ modal value for mode imputation, and \code{\link{scale_by_control}} puts
 outcomes on a control-group-SD scale.
 }
 
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://alexandercoppock.com/excheckr/}
+  \item \url{https://github.com/acoppock/excheckr}
+  \item Report bugs at \url{https://github.com/acoppock/excheckr/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Alexander Coppock \email{acoppock@gmail.com}
 

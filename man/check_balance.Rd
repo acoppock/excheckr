@@ -59,10 +59,12 @@ covariate tests and the joint test stacked and distinguished by a
 When \code{flatten = FALSE} (the default), a list with two elements:
   \describe{
     \item{covariate_tests}{A tibble with one row per covariate (or covariate
-      level for factors), containing the F-test from regressing each covariate
-      on treatment. Columns: covariate, level, F_stat, df1, df2, p_value, nobs.}
+      level for factors), containing the test from regressing each covariate
+      on treatment. Columns: covariate, level, F_stat, statistic, df1, df2,
+      p_value, nobs.}
     \item{joint_test}{A tibble with a single row containing the joint test
-      of all covariates predicting treatment. Columns: F_stat, df1, df2, p_value, nobs.}
+      of all covariates predicting treatment. Same columns, without
+      covariate and level.}
   }
   When \code{flatten = TRUE}, a single tibble stacking both, with a
   \code{test} column taking values \code{"covariate"} and \code{"joint"}.
@@ -90,6 +92,28 @@ a \code{declaration} is provided:
     multinomial LR statistic as the test function, via \code{ri2::conduct_ri}.
 }
 }
+\section{What \code{F_stat} contains}{
+
+The \code{F_stat} column does not always hold an F statistic, because the
+joint test is not always an F test. The \code{statistic} column records which
+quantity it is, so that results stacked across studies stay interpretable:
+\itemize{
+  \item \code{"F"}: a genuine F statistic. All covariate-by-covariate tests,
+    and the joint test for a binary treatment with no \code{declaration}.
+  \item \code{"LR/df"}: a multinomial likelihood-ratio statistic divided by
+    its degrees of freedom, which is F-like but is not an F. The joint test
+    for a multi-armed treatment with no \code{declaration}.
+  \item \code{"LR"}: the raw multinomial likelihood-ratio statistic,
+    undivided. The joint test on the randomization inference path, where the
+    reference distribution is the permutation distribution rather than a
+    parametric one, so there is nothing to divide by.
+}
+Stacking a mix of binary and multi-armed studies therefore puts different
+quantities in one \code{F_stat} column. The \code{p_value} column is
+comparable across all three; \code{F_stat} is not. Group by \code{statistic}
+before comparing or plotting the statistics themselves.
+}
+
 \examples{
 set.seed(42)
 dat <- data.frame(

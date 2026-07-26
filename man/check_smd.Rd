@@ -23,8 +23,13 @@ names using tidyselect helpers. If omitted, all \code{"X_"} columns are
 used.}
 
 \item{reference}{Value of \code{treatment} to use as the reference arm.
-Defaults to the first factor level, or the smallest value for numeric
-treatments.}
+Defaults to the first factor level, or the smallest value for numeric and
+character treatments. That default is a guess based on ordering, not on
+meaning: if the control arm is not the first level, every difference is
+computed against a treatment arm instead and every sign flips. The arm
+actually used is reported in the \code{reference} column of the result, so
+check it rather than assume it, and pass \code{reference} explicitly when
+the control arm is not first.}
 
 \item{study_id}{Optional character scalar. If provided, a \code{study_id}
 column holding this value is appended to the result.}

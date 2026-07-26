@@ -150,11 +150,12 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
   q <- (K - 1) * p_covar
 
   na_result <- tibble::tibble(
-    F_stat  = NA_real_,
-    df1     = NA_integer_,
-    df2     = NA_integer_,
-    p_value = NA_real_,
-    nobs    = as.integer(n)
+    F_stat    = NA_real_,
+    statistic = "LR/df",
+    df1       = NA_integer_,
+    df2       = NA_integer_,
+    p_value   = NA_real_,
+    nobs      = as.integer(n)
   )
 
   # Check for empty treatment groups after complete-case filtering
@@ -198,11 +199,12 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
   p_value <- stats::pchisq(lr_stat, df = q, lower.tail = FALSE)
 
   tibble::tibble(
-    F_stat  = lr_stat / q,
-    df1     = as.integer(q),
-    df2     = NA_integer_,
-    p_value = p_value,
-    nobs    = as.integer(n)
+    F_stat    = lr_stat / q,
+    statistic = "LR/df",
+    df1       = as.integer(q),
+    df2       = NA_integer_,
+    p_value   = p_value,
+    nobs      = as.integer(n)
   )
 }
 
@@ -263,10 +265,11 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
   obs_stat <- test_function(data)
 
   tibble::tibble(
-    F_stat  = obs_stat,
-    df1     = NA_integer_,
-    df2     = NA_integer_,
-    p_value = p_value,
-    nobs    = as.integer(n)
+    F_stat    = obs_stat,
+    statistic = "LR",
+    df1       = NA_integer_,
+    df2       = NA_integer_,
+    p_value   = p_value,
+    nobs      = as.integer(n)
   )
 }

@@ -291,3 +291,59 @@ test_that("declaration = 'complete' runs randomization inference", {
   expect_lte(out$joint_test$p_value, 1)
   expect_true(is.na(out$joint_test$df1))
 })
+
+
+# the statistic column ----
+
+test_that("binary treatment reports a genuine F statistic", {
+  out <- check_balance(balance_fixture(), Z)
+  expect_equal(out$joint_test$statistic, "F")
+  expect_true(all(out$covariate_tests$statistic == "F"))
+  expect_true(is.finite(out$joint_test$df2))
+})
+
+test_that("multi-arm treatment reports LR/df, not an F", {
+  set.seed(1)
+  dat <- data.frame(
+    Z = factor(rep(c("C", "T1", "T2"), length.out = 201)),
+    X_age = rnorm(201, 50, 10)
+  )
+  out <- check_balance(dat, Z)
+
+  expect_equal(out$joint_test$statistic, "LR/df")
+  expect_true(is.na(out$joint_test$df2))
+  # covariate-by-covariate tests remain genuine F tests
+  expect_true(all(out$covariate_tests$statistic == "F"))
+})
+
+test_that("the RI path reports a raw LR statistic", {
+  skip_if_not_installed("randomizr")
+  skip_if_not_installed("ri2")
+
+  set.seed(9)
+  dat <- data.frame(
+    Z = factor(rep(c("C", "T1", "T2"), each = 60)),
+    X_age = rnorm(180)
+  )
+  out <- check_balance(dat, Z, declaration = "complete", sims = 25)
+
+  expect_equal(out$joint_test$statistic, "LR")
+  expect_true(is.na(out$joint_test$df1))
+  expect_true(is.na(out$joint_test$df2))
+})
+
+test_that("statistic distinguishes the paths once results are stacked", {
+  set.seed(3)
+  binary <- check_balance(balance_fixture(), Z, study_id = "a", flatten = TRUE)
+  multi <- check_balance(
+    data.frame(Z = factor(rep(c("C", "T1", "T2"), length.out = 201)),
+               X_age = rnorm(201)),
+    Z, study_id = "b", flatten = TRUE
+  )
+  stacked <- rbind(binary, multi)
+  joint <- stacked[stacked$test == "joint", ]
+
+  # Without `statistic` these two rows would be indistinguishable quantities
+  # sitting in one F_stat column.
+  expect_equal(sort(joint$statistic), c("F", "LR/df"))
+})

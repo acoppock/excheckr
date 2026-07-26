@@ -26,6 +26,11 @@
 #'   outcome, and covariate columns (defaults \code{"Z"}, \code{"Y"},
 #'   \code{"X_"}). \code{treatment} and \code{outcome} match either a bare
 #'   prefix (e.g. \code{"Z"}) or one followed by an underscore (\code{"Z_party"}).
+#' @param extra_roles Character vector of additional role-column prefixes beyond
+#'   covariate/treatment/outcome, matched as \code{"^<prefix>"}. Use for schemas
+#'   with further role families, e.g. \code{"D_"} for belief / first-stage
+#'   measures in the block-long beliefs schema. These columns count as roles, not
+#'   as contract leaks, and are included in the all-NA check.
 #' @param require_weights Logical. If \code{TRUE} (the default), a non-NA
 #'   \code{weights} column is required (use \code{weights = 1} when a study has
 #'   no survey weights).
@@ -50,12 +55,15 @@
 #' @export
 check_schema <- function(data, key = "resp_id", meta = character(),
                          treatment = "Z", outcome = "Y", covariate = "X_",
+                         extra_roles = character(),
                          require_weights = TRUE, study_id = NULL) {
   nm <- names(data)
   x_cols <- grep(paste0("^", covariate), nm, value = TRUE)
   z_cols <- grep(paste0("^", treatment, "(_|$)"), nm, value = TRUE)
   y_cols <- grep(paste0("^", outcome, "(_|$)"), nm, value = TRUE)
-  role_cols <- c(x_cols, z_cols, y_cols)
+  extra_cols <- unlist(lapply(extra_roles, function(p) grep(paste0("^", p), nm, value = TRUE)),
+                       use.names = FALSE)
+  role_cols <- c(x_cols, z_cols, y_cols, extra_cols)
 
   rows <- list()
   add <- function(check, severity, pass, detail = NA_character_) {
@@ -91,7 +99,7 @@ check_schema <- function(data, key = "resp_id", meta = character(),
   add("treatment_varies", "warn", length(const_z) == 0,
       if (length(const_z)) paste(const_z, collapse = ", ") else NA_character_)
 
-  na_cols <- c(x_cols, y_cols)
+  na_cols <- c(x_cols, y_cols, extra_cols)
   allna <- na_cols[vapply(na_cols, function(v) all(is.na(data[[v]])), logical(1))]
   add("no_all_na_columns", "warn", length(allna) == 0,
       if (length(allna)) paste(allna, collapse = ", ") else NA_character_)

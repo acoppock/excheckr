@@ -113,3 +113,14 @@ test_that("assert_no_labelled errors on a labelled column", {
   d <- good_dat(); d$X_age <- structure(d$X_age, class = "haven_labelled")
   expect_error(assert_no_labelled(d), "X_age")
 })
+
+# --- extra_roles ---
+
+test_that("extra_roles columns count as roles, not leaks", {
+  d <- good_dat(); d$D_belief <- c(0.2, 0.4, 0.6, 0.8)
+  r0 <- check_schema(d, key = c("resp_id", "topic"))
+  expect_false(r0$pass[r0$check == "no_extra_columns"])
+  expect_match(r0$detail[r0$check == "no_extra_columns"], "D_belief")
+  r1 <- check_schema(d, key = c("resp_id", "topic"), extra_roles = "D_")
+  expect_true(r1$pass[r1$check == "no_extra_columns"])
+})
