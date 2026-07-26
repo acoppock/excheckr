@@ -37,6 +37,7 @@
 #' @importFrom rlang enquo quo_is_null eval_tidy
 #' @importFrom tibble tibble
 #' @importFrom dplyr mutate
+#' @family per-study checks
 #' @export
 check_y_bounds <- function(data, study_id = NULL, outcomes = NULL,
                            prefix = "Y_", exclude = NULL) {
@@ -136,6 +137,7 @@ check_y_bounds <- function(data, study_id = NULL, outcomes = NULL,
 #' @importFrom tidyselect eval_select
 #' @importFrom rlang enquo quo_is_null eval_tidy
 #' @importFrom tibble tibble
+#' @family per-study checks
 #' @export
 check_missingness_nona <- function(data, study_id = NULL, covariates = NULL,
                                    prefix = "X_", nona_suffix = "_nona",

@@ -37,7 +37,9 @@ The filters are:
   \item{nona_still_missing}{\code{missingness} rows whose imputed companion
     column still contains \code{NA}: the imputation did not take.}
   \item{balance_joint}{\code{balance_joint} rows with \code{p_value} at or
-    below \code{alpha}.}
+    below \code{alpha}. A single \code{balance} element produced by
+    \code{check_balance(flatten = TRUE)} is split on its \code{test} column
+    and handled the same way.}
   \item{balance_covariate}{\code{balance_covariate} rows with \code{p_value}
     at or below \code{alpha}. Expect roughly \code{alpha} of these to fail by
     chance; use \code{\link{summarize_check_pvalues}} to judge whether there
@@ -56,3 +58,10 @@ checks <- list(
 report_checks(checks)
 
 }
+\seealso{
+Other across-study summaries:
+\code{\link[=plot_check_pvalues]{plot_check_pvalues()}},
+\code{\link[=stack_checks]{stack_checks()}},
+\code{\link[=summarize_check_pvalues]{summarize_check_pvalues()}}
+}
+\concept{across-study summaries}

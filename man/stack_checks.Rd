@@ -57,3 +57,10 @@ saveRDS(
 stack_checks(d)
 
 }
+\seealso{
+Other across-study summaries:
+\code{\link[=plot_check_pvalues]{plot_check_pvalues()}},
+\code{\link[=report_checks]{report_checks()}},
+\code{\link[=summarize_check_pvalues]{summarize_check_pvalues()}}
+}
+\concept{across-study summaries}

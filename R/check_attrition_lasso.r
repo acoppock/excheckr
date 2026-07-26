@@ -111,6 +111,7 @@
 #' @importFrom rlang ensym as_name
 #' @importFrom tibble tibble
 #' @importFrom stats as.formula coef vcov df.residual pf
+#' @family per-study checks
 #' @export
 check_attrition_lasso <- function(
     data,

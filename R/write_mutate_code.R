@@ -41,6 +41,7 @@
 #' @importFrom rlang expr as_name ensym
 #' @importFrom purrr map_chr
 #' @importFrom glue glue
+#' @family code generators
 #' @export
 write_covariate_imputation_code <- function(data, ..., include_missingness_dummies = TRUE) {
   # Capture the dataset name as a string
@@ -135,6 +136,7 @@ write_covariate_imputation_code <- function(data, ..., include_missingness_dummi
 #' @importFrom rlang expr as_name ensym
 #' @importFrom purrr map_chr
 #' @importFrom glue glue
+#' @family code generators
 #' @export
 write_outcome_missingness_dummies_code <- function(data, ...) {
   # Capture the dataset name as a string

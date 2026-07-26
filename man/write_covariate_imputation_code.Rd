@@ -49,3 +49,10 @@ vars <- c("X_factor_variable", "X_numeric_variable")
 write_covariate_imputation_code(dat, dplyr::all_of(vars))
 
 }
+\seealso{
+Other code generators:
+\code{\link[=write_attrition_check_code]{write_attrition_check_code()}},
+\code{\link[=write_balance_check_code]{write_balance_check_code()}},
+\code{\link[=write_outcome_missingness_dummies_code]{write_outcome_missingness_dummies_code()}}
+}
+\concept{code generators}

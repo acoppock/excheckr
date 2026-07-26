@@ -43,3 +43,10 @@ vars <- c("Y_attitude", "Y_behavior")
 write_outcome_missingness_dummies_code(dat, dplyr::all_of(vars))
 
 }
+\seealso{
+Other code generators:
+\code{\link[=write_attrition_check_code]{write_attrition_check_code()}},
+\code{\link[=write_balance_check_code]{write_balance_check_code()}},
+\code{\link[=write_covariate_imputation_code]{write_covariate_imputation_code()}}
+}
+\concept{code generators}

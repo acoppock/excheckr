@@ -1,0 +1,256 @@
+---
+title: "Checking Many Studies at Once"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Checking Many Studies at Once}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 3.2
+)
+```
+
+```{r setup, message = FALSE}
+library(excheckr)
+```
+
+A meta-analysis or a multi-study project runs the same handful of design checks
+on every study it includes, and then has to make sense of several hundred test
+results at once. This vignette covers that second half: labelling per-study
+output so it can be stacked, collapsing it into one object, and reading the
+result without fooling yourself.
+
+The pattern has three stages.
+
+1. One checking script per study, writing its results to disk.
+2. `stack_checks()` to bind them into a single object.
+3. `report_checks()` and the p-value diagnostics to decide what needs attention.
+
+## Some studies to check
+
+Real projects read cleaned data from disk. Here we simulate eight studies that
+follow the column conventions the package expects: a treatment `Z`, covariates
+prefixed `X_` with imputed `_nona` companions, and outcomes prefixed `Y_` scaled
+to the unit interval.
+
+Two studies are given deliberate problems, so there is something to find.
+
+```{r simulate}
+set.seed(20260725)
+
+simulate_study <- function(study_id, n = 800, imbalanced = FALSE,
+                           attrition = FALSE, out_of_bounds = FALSE) {
+  X_age <- rnorm(n, 50, 15)
+  X_educ <- factor(sample(c("HS", "College", "Postgrad"), n, replace = TRUE))
+
+  # An imbalanced study assigns treatment as a function of a covariate
+  Z <- if (imbalanced) {
+    rbinom(n, 1, plogis((X_age - 50) / 12))
+  } else {
+    rbinom(n, 1, 0.5)
+  }
+
+  Y_support <- plogis(0.4 * Z + 0.02 * (X_age - 50) + rnorm(n))
+  Y_turnout <- plogis(0.2 * Z + rnorm(n))
+
+  # Differential attrition: the treated drop out more often
+  p_missing <- if (attrition) 0.05 + 0.20 * Z else 0.08
+  Y_support[rbinom(n, 1, p_missing) == 1] <- NA
+
+  if (out_of_bounds) Y_turnout <- Y_turnout * 100
+
+  # A covariate with missing values, plus its imputed companion
+  X_age[sample(n, round(0.05 * n))] <- NA
+
+  data.frame(
+    study_id = study_id, Z = Z,
+    X_age = X_age, X_age_nona = ifelse(is.na(X_age), mean(X_age, na.rm = TRUE), X_age),
+    X_educ = X_educ, X_educ_nona = X_educ,
+    Y_support = Y_support, Y_turnout = Y_turnout
+  )
+}
+
+studies <- c(sprintf("study_%02d", 1:8))
+datasets <- lapply(studies, function(s) {
+  simulate_study(
+    s,
+    imbalanced    = s == "study_03",
+    attrition     = s == "study_05",
+    out_of_bounds = s == "study_07"
+  )
+})
+names(datasets) <- studies
+```
+
+## One checking script per study
+
+In a real project each study gets its own script, so that a study's covariate
+list and quirks live next to the study rather than in a loop. The important
+detail is `study_id`: every check takes it, and every check appends it to its
+output, which is what makes the results stackable later.
+
+`check_balance()` normally returns a two-element list. Passing `flatten = TRUE`
+returns one tibble instead, with a `test` column distinguishing the joint test
+from the covariate-by-covariate tests.
+
+```{r checks}
+check_dir <- file.path(tempdir(), "checks")
+dir.create(check_dir, showWarnings = FALSE)
+
+for (s in studies) {
+  dat <- datasets[[s]]
+  nona <- c("X_age_nona", "X_educ_nona")
+
+  saveRDS(
+    list(
+      ybounds     = check_y_bounds(dat, study_id = s),
+      missingness = check_missingness_nona(dat, study_id = s),
+      balance     = check_balance(dat, Z, covariates = nona,
+                                  study_id = s, flatten = TRUE),
+      attrition   = check_attrition(dat, Z, outcomes = c("Y_support", "Y_turnout"),
+                                    study_id = s)
+    ),
+    file.path(check_dir, paste0(s, "_checks.rds"))
+  )
+}
+
+list.files(check_dir)
+```
+
+## Stacking
+
+`stack_checks()` reads every per-study file and binds it element-wise, so the
+`ybounds` tibbles from all eight studies become one `ybounds` tibble. Elements
+that are `NULL` or have no rows in a given file are dropped before binding, so a
+study that contributes nothing to one check does not break the others.
+
+```{r stack}
+all_checks <- stack_checks(check_dir)
+
+names(all_checks)
+nrow(all_checks$balance)
+```
+
+The stacked object is a plain named list of tibbles, so anything downstream is
+ordinary data manipulation.
+
+```{r stacked-peek}
+head(all_checks$ybounds, 3)
+```
+
+## Triage
+
+`report_checks()` applies the filters that a human would apply by hand and
+returns only the rows that failed. Its print method shows the counts.
+
+```{r report}
+report <- report_checks(all_checks)
+report
+```
+
+The three planted problems surface, and each element is a tibble you can inspect
+directly.
+
+```{r report-detail}
+report$out_of_bounds[, c("study_id", "variable", "min", "max")]
+report$attrition[, c("study_id", "outcome", "p_value")]
+```
+
+## Reading the p-values honestly
+
+The flagged balance tests deserve more care than the other two categories, and
+this is where multi-study checking most often goes wrong.
+
+Under a valid design, balance test p-values are distributed Uniform(0, 1). That
+means roughly `alpha` of them fall below `alpha` **by construction**. In a
+collection of a few hundred tests, a handful of flags is what success looks
+like. Treating each flagged test as evidence against the study that produced it,
+and dropping those studies, is a reliable way to introduce exactly the bias the
+checks were meant to detect.
+
+The useful question is therefore not "which tests failed" but "does the
+distribution look uniform". `summarize_check_pvalues()` answers it.
+
+```{r summary}
+covariate_tests <- all_checks$balance[all_checks$balance$test == "covariate", ]
+
+summarize_check_pvalues(covariate_tests)
+```
+
+`pct_below` is the observed rejection rate and `expected_below` is what the
+design implies, so the two should be close. `ks_p` is a Kolmogorov-Smirnov test
+against the uniform, where a small value means the distribution is the wrong
+shape overall. `pct_below_fdr` applies a Benjamini-Hochberg correction, which is
+the right lens when you want to know whether any individual test survives
+multiplicity.
+
+The `group` argument controls what the FDR correction is computed over. Adjusting
+within study asks whether a given study looks broken; adjusting across all tests
+asks whether the collection as a whole does. They answer different questions, so
+the choice belongs at the call site rather than in a default.
+
+```{r summary-grouped}
+summarize_check_pvalues(covariate_tests, group = "study_id")
+```
+
+The picture is easier to read as a histogram against the uniform reference. The
+dotted line is the expected height of each bar, and the dashed line marks
+`alpha`.
+
+```{r plot, message = FALSE}
+plot_check_pvalues(covariate_tests)
+```
+
+Setting `fdr = TRUE` adds the adjusted panel alongside the raw one.
+
+```{r plot-fdr, message = FALSE, fig.height = 3.4}
+plot_check_pvalues(covariate_tests, group = "study_id", fdr = TRUE)
+```
+
+Because `plot_check_pvalues()` returns an ordinary `ggplot` object with minimal
+theming, a project theme can be added to it in the usual way.
+
+## Magnitude, not just significance
+
+A p-value answers whether an imbalance is larger than chance would produce. It
+does not answer whether the imbalance is large enough to matter, and in a large
+sample a trivial difference will be significant. `check_smd()` reports the
+standardized mean difference for each covariate against a reference arm,
+dividing by the reference arm's standard deviation so the denominator is fixed
+across arms.
+
+```{r smd}
+smd <- check_smd(datasets[["study_03"]], Z,
+                 covariates = c("X_age_nona", "X_educ_nona"),
+                 study_id = "study_03")
+
+smd[, c("covariate", "level", "smd", "flag")]
+```
+
+This is the imbalanced study, and `X_age_nona` is flagged at the conventional
+0.1 threshold. Running the same call on a sound study returns small values,
+which is the comparison worth making.
+
+```{r smd-clean}
+check_smd(datasets[["study_01"]], Z,
+          covariates = c("X_age_nona", "X_educ_nona"))[, c("covariate", "smd", "flag")]
+```
+
+## Where this leaves you
+
+The output of this workflow is a decision about which studies need a closer
+look, not an automatic exclusion rule. Out-of-bounds outcomes and covariates
+missing an imputed companion are usually cleaning errors and worth fixing at
+source. A single flagged balance test usually is not worth acting on. A
+distribution of balance p-values that is visibly non-uniform is.
+
+For the calibration behind the balance tests themselves, including how the joint
+test behaves as the number of arms grows and when randomization inference is
+worth the trouble, see
+`vignette("balance_testing", package = "excheckr")`.

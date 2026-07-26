@@ -56,3 +56,10 @@ plot_check_pvalues(tests)
 plot_check_pvalues(tests, group = "study_id", fdr = TRUE)
 
 }
+\seealso{
+Other across-study summaries:
+\code{\link[=report_checks]{report_checks()}},
+\code{\link[=stack_checks]{stack_checks()}},
+\code{\link[=summarize_check_pvalues]{summarize_check_pvalues()}}
+}
+\concept{across-study summaries}

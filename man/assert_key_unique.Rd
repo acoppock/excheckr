@@ -23,3 +23,10 @@ checkers (e.g. a conjoint \code{check_conjoint}).
 assert_key_unique(data.frame(resp_id = 1:3), key = "resp_id")
 
 }
+\seealso{
+Other schema assertions:
+\code{\link[=assert_no_labelled]{assert_no_labelled()}},
+\code{\link[=assert_schema]{assert_schema()}},
+\code{\link[=check_schema]{check_schema()}}
+}
+\concept{schema assertions}

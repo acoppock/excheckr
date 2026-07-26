@@ -22,3 +22,10 @@ reusable by bespoke checkers.
 assert_no_labelled(data.frame(x = 1:3))
 
 }
+\seealso{
+Other schema assertions:
+\code{\link[=assert_key_unique]{assert_key_unique()}},
+\code{\link[=assert_schema]{assert_schema()}},
+\code{\link[=check_schema]{check_schema()}}
+}
+\concept{schema assertions}

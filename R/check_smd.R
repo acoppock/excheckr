@@ -49,6 +49,7 @@
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
 #' @importFrom stats sd
+#' @family per-study checks
 #' @export
 check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
                       study_id = NULL, threshold = 0.1) {

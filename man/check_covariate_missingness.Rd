@@ -50,3 +50,13 @@ vars <- c("X_pid_3", "X_income", "X_age")
 check_covariate_missingness(dat, dplyr::all_of(vars))
 
 }
+\seealso{
+Other per-study checks:
+\code{\link[=check_attrition]{check_attrition()}},
+\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
+\code{\link[=check_balance]{check_balance()}},
+\code{\link[=check_missingness_nona]{check_missingness_nona()}},
+\code{\link[=check_smd]{check_smd()}},
+\code{\link[=check_y_bounds]{check_y_bounds()}}
+}
+\concept{per-study checks}

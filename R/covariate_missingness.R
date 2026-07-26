@@ -43,6 +43,7 @@
 #' @importFrom dplyr mutate rowwise ungroup filter
 #' @importFrom tibble tibble
 #' @importFrom ggplot2 ggplot aes geom_tile geom_text scale_fill_viridis_c coord_fixed labs theme_minimal theme element_text
+#' @family per-study checks
 #' @export
 check_covariate_missingness <- function(data, ...) {
   # Evaluate column selection; supports unquoted names, all_of(), or nothing

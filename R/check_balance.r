@@ -106,6 +106,7 @@
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
 #' @importFrom stats as.formula model.matrix model.frame complete.cases pf coef fitted.values
+#' @family per-study checks
 #' @export
 check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust,
                           declaration = NULL, sims = 1000, study_id = NULL,
@@ -353,6 +354,7 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
 #' @importFrom rlang ensym as_name enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom glue glue
+#' @family code generators
 #' @export
 write_balance_check_code <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust, ...) {
   # Capture dataset and treatment names

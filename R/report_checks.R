@@ -16,7 +16,9 @@
 #'   \item{nona_still_missing}{\code{missingness} rows whose imputed companion
 #'     column still contains \code{NA}: the imputation did not take.}
 #'   \item{balance_joint}{\code{balance_joint} rows with \code{p_value} at or
-#'     below \code{alpha}.}
+#'     below \code{alpha}. A single \code{balance} element produced by
+#'     \code{check_balance(flatten = TRUE)} is split on its \code{test} column
+#'     and handled the same way.}
 #'   \item{balance_covariate}{\code{balance_covariate} rows with \code{p_value}
 #'     at or below \code{alpha}. Expect roughly \code{alpha} of these to fail by
 #'     chance; use \code{\link{summarize_check_pvalues}} to judge whether there
@@ -45,6 +47,7 @@
 #' report_checks(checks)
 #'
 #' @importFrom dplyr filter arrange desc
+#' @family across-study summaries
 #' @export
 report_checks <- function(checks, alpha = 0.05) {
   if (!is.list(checks) || is.data.frame(checks)) {
@@ -70,6 +73,19 @@ report_checks <- function(checks, alpha = 0.05) {
           missingness$nona_has_na, , drop = FALSE
       ]
     }
+  }
+
+  # Balance arrives in either of two shapes: as separate `balance_joint` and
+  # `balance_covariate` elements, or as a single `balance` element produced by
+  # check_balance(flatten = TRUE), which distinguishes the two with a `test`
+  # column. Split the flattened form so both reach the same filter.
+  balance <- pluck_check(checks, "balance")
+  if (!is.null(balance) && "test" %in% names(balance)) {
+    checks$balance_joint <- balance[balance$test == "joint", , drop = FALSE]
+    checks$balance_covariate <- balance[balance$test == "covariate", , drop = FALSE]
+  } else if (!is.null(balance) && "p_value" %in% names(balance)) {
+    # A `balance` element with no `test` column is treated as joint tests.
+    checks$balance_joint <- balance
   }
 
   for (nm in c("balance_joint", "balance_covariate")) {

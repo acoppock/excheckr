@@ -62,4 +62,8 @@ check_s_scaling(dat, treatment = "Z")
 }
 \seealso{
 \code{\link{scale_by_control}}
+
+Other outcome scaling:
+\code{\link[=scale_by_control]{scale_by_control()}}
 }
+\concept{outcome scaling}

@@ -46,6 +46,7 @@
 #' scale_by_control(dat, treatment = "Z")
 #'
 #' @importFrom stats sd
+#' @family outcome scaling
 #' @export
 scale_by_control <- function(data, treatment, control_value = 0,
                               outcomes = NULL, prefixes = c("D_", "Y_")) {

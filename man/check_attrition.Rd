@@ -103,3 +103,13 @@ if (requireNamespace("randomizr", quietly = TRUE)) {
 }
 
 }
+\seealso{
+Other per-study checks:
+\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
+\code{\link[=check_balance]{check_balance()}},
+\code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
+\code{\link[=check_missingness_nona]{check_missingness_nona()}},
+\code{\link[=check_smd]{check_smd()}},
+\code{\link[=check_y_bounds]{check_y_bounds()}}
+}
+\concept{per-study checks}

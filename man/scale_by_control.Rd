@@ -66,3 +66,8 @@ Glass, G. V. (1976). Primary, secondary, and meta-analysis of research.
 \emph{Educational Researcher}, \emph{5}(10), 11--17.
 \doi{10.3102/0013189X005010003}
 }
+\seealso{
+Other outcome scaling:
+\code{\link[=check_s_scaling]{check_s_scaling()}}
+}
+\concept{outcome scaling}

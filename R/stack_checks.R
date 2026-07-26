@@ -39,6 +39,7 @@
 #' stack_checks(d)
 #'
 #' @importFrom dplyr bind_rows
+#' @family across-study summaries
 #' @export
 stack_checks <- function(dir = "checks",
                          pattern = "_checks\\.rds$",

@@ -116,3 +116,44 @@ test_that("report_checks prints counts", {
 test_that("report_checks errors on a data frame", {
   expect_error(report_checks(data.frame(x = 1)), "named list")
 })
+
+
+# flattened balance input ----
+
+test_that("a flattened balance element is split on its test column", {
+  # check_balance(flatten = TRUE) returns one tibble with a `test` column
+  # rather than separate balance_joint / balance_covariate elements. Both
+  # shapes must reach the same filter, or the flatten argument silently
+  # removes balance from the triage.
+  checks <- list(
+    balance = data.frame(
+      test      = c("covariate", "covariate", "joint", "joint"),
+      study_id  = c("a", "b", "a", "b"),
+      covariate = c("X_age", "X_age", NA, NA),
+      p_value   = c(0.6, 0.01, 0.4, 0.02),
+      stringsAsFactors = FALSE
+    )
+  )
+  rep <- report_checks(checks)
+
+  expect_equal(rep$balance_covariate$study_id, "b")
+  expect_equal(rep$balance_joint$study_id, "b")
+})
+
+test_that("a balance element without a test column is treated as joint", {
+  checks <- list(
+    balance = data.frame(study_id = c("a", "b"), p_value = c(0.4, 0.01))
+  )
+  rep <- report_checks(checks)
+  expect_equal(rep$balance_joint$study_id, "b")
+  expect_null(rep$balance_covariate)
+})
+
+test_that("the split form still takes precedence when both are present", {
+  checks <- list(
+    balance_joint = data.frame(study_id = "z", p_value = 0.01),
+    balance = data.frame(test = "joint", study_id = "a", p_value = 0.01)
+  )
+  # `balance` is expanded into balance_joint, overwriting; documented behaviour
+  expect_equal(report_checks(checks)$balance_joint$study_id, "a")
+})

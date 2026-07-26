@@ -1,0 +1,64 @@
+url: https://acoppock.github.io/excheckr/
+
+template:
+  bootstrap: 5
+
+reference:
+- title: Checking one study
+  desc: >
+    Run once per cleaned experimental dataset. Each check takes a `study_id`
+    and appends it to the output, so results can be stacked across studies.
+  contents:
+  - check_y_bounds
+  - check_missingness_nona
+  - check_balance
+  - check_smd
+  - check_attrition
+  - check_attrition_lasso
+  - check_covariate_missingness
+
+- title: Checking many studies
+  desc: >
+    Collapse per-study results and read them without over-reading them. Balance
+    p-values are uniform under a valid design, so a count of flags is the wrong
+    summary; the distribution is the right one.
+  contents:
+  - stack_checks
+  - report_checks
+  - summarize_check_pvalues
+  - plot_check_pvalues
+
+- title: Data shape
+  desc: >
+    Check that a cleaned dataset has the structure a pipeline expects, as
+    distinct from checking that the experiment behind it was sound.
+  contents:
+  - check_schema
+  - assert_schema
+  - assert_key_unique
+  - assert_no_labelled
+
+- title: Cleaning helpers
+  desc: >
+    Utilities for building cleaned data, and code generators that emit
+    copy-pasteable cleaning and checking blocks.
+  contents:
+  - stat_mode
+  - scale_by_control
+  - check_s_scaling
+  - write_covariate_imputation_code
+  - write_outcome_missingness_dummies_code
+  - write_balance_check_code
+  - write_attrition_check_code
+
+- title: Package
+  contents:
+  - excheckr-package
+
+articles:
+- title: Articles
+  navbar: ~
+  contents:
+  - checking_many_studies
+  - checking_experiments
+  - balance_testing

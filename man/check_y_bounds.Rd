@@ -54,3 +54,13 @@ check_y_bounds(dat, study_id = "my_study")
 check_y_bounds(dat, outcomes = "Y_support")
 
 }
+\seealso{
+Other per-study checks:
+\code{\link[=check_attrition]{check_attrition()}},
+\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
+\code{\link[=check_balance]{check_balance()}},
+\code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
+\code{\link[=check_missingness_nona]{check_missingness_nona()}},
+\code{\link[=check_smd]{check_smd()}}
+}
+\concept{per-study checks}

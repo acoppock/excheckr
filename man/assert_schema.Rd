@@ -28,3 +28,10 @@ dat <- data.frame(resp_id = 1:3, weights = 1, Z = c(0, 1, 0), Y = c(0, 1, 1))
 assert_schema(dat)
 
 }
+\seealso{
+Other schema assertions:
+\code{\link[=assert_key_unique]{assert_key_unique()}},
+\code{\link[=assert_no_labelled]{assert_no_labelled()}},
+\code{\link[=check_schema]{check_schema()}}
+}
+\concept{schema assertions}

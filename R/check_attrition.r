@@ -83,6 +83,7 @@
 #' @importFrom tidyselect eval_select
 #' @importFrom tibble tibble
 #' @importFrom stats coef vcov df.residual pf as.formula
+#' @family per-study checks
 #' @export
 check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
                             .method = estimatr::lm_robust, study_id = NULL,
@@ -332,6 +333,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 #' @importFrom rlang ensym as_name enquo quo_is_null eval_tidy
 #' @importFrom tidyselect eval_select
 #' @importFrom glue glue
+#' @family code generators
 #' @export
 write_attrition_check_code <- function(data, treatment, outcomes = NULL, .method = estimatr::lm_robust, ...) {
   # Capture dataset and treatment names

@@ -30,6 +30,8 @@ Imports:
     nnet
 Suggests:
     DeclareDesign,
+    future,
+    future.apply,
     glmnet,
     randomizr,
     ri2,

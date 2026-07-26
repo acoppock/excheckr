@@ -69,3 +69,10 @@ check_schema(dat)
 check_schema(dat, meta = "topic", study_id = "my_study")
 
 }
+\seealso{
+Other schema assertions:
+\code{\link[=assert_key_unique]{assert_key_unique()}},
+\code{\link[=assert_no_labelled]{assert_no_labelled()}},
+\code{\link[=assert_schema]{assert_schema()}}
+}
+\concept{schema assertions}

@@ -42,6 +42,7 @@
 #' @importFrom stats sd
 #' @importFrom tibble tibble
 #' @importFrom dplyr mutate
+#' @family outcome scaling
 #' @export
 check_s_scaling <- function(data, treatment, control_value = 0,
                              study_id = NULL, outcomes = NULL,

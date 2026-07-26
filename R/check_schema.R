@@ -46,6 +46,7 @@
 #'
 #' @importFrom tibble tibble
 #' @importFrom dplyr bind_rows n_distinct
+#' @family schema assertions
 #' @export
 check_schema <- function(data, key = "resp_id", meta = character(),
                          treatment = "Z", outcome = "Y", covariate = "X_",
@@ -117,6 +118,7 @@ check_schema <- function(data, key = "resp_id", meta = character(),
 #' dat <- data.frame(resp_id = 1:3, weights = 1, Z = c(0, 1, 0), Y = c(0, 1, 1))
 #' assert_schema(dat)
 #'
+#' @family schema assertions
 #' @export
 assert_schema <- function(data, ..., study_id = NULL) {
   res <- check_schema(data, ..., study_id = study_id)
@@ -153,6 +155,7 @@ assert_schema <- function(data, ..., study_id = NULL) {
 #' @examples
 #' assert_key_unique(data.frame(resp_id = 1:3), key = "resp_id")
 #'
+#' @family schema assertions
 #' @export
 assert_key_unique <- function(data, key) {
   missing <- setdiff(key, names(data))
@@ -178,6 +181,7 @@ assert_key_unique <- function(data, key) {
 #' @examples
 #' assert_no_labelled(data.frame(x = 1:3))
 #'
+#' @family schema assertions
 #' @export
 assert_no_labelled <- function(data) {
   labelled <- names(data)[vapply(data, function(x) inherits(x, "haven_labelled"), logical(1))]

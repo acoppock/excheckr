@@ -60,3 +60,10 @@ if (requireNamespace("randomizr", quietly = TRUE)) {
 }
 
 }
+\seealso{
+Other code generators:
+\code{\link[=write_attrition_check_code]{write_attrition_check_code()}},
+\code{\link[=write_covariate_imputation_code]{write_covariate_imputation_code()}},
+\code{\link[=write_outcome_missingness_dummies_code]{write_outcome_missingness_dummies_code()}}
+}
+\concept{code generators}

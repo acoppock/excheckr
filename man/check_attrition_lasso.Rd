@@ -138,3 +138,13 @@ Peduzzi, P., Concato, J., Kemper, E., Holford, T.R., and Feinstein, A.R.
 (1996). A simulation study of the number of events per variable in logistic
 regression analysis. *Journal of Clinical Epidemiology*, 49(12), 1373-1379.
 }
+\seealso{
+Other per-study checks:
+\code{\link[=check_attrition]{check_attrition()}},
+\code{\link[=check_balance]{check_balance()}},
+\code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
+\code{\link[=check_missingness_nona]{check_missingness_nona()}},
+\code{\link[=check_smd]{check_smd()}},
+\code{\link[=check_y_bounds]{check_y_bounds()}}
+}
+\concept{per-study checks}

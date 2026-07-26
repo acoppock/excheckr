@@ -40,6 +40,7 @@ utils::globalVariables(c(
 #'
 #' @importFrom tibble tibble
 #' @importFrom stats p.adjust ks.test
+#' @family across-study summaries
 #' @export
 summarize_check_pvalues <- function(x, p_col = "p_value", group = NULL, alpha = 0.05) {
   p <- extract_pvalues(x, p_col)
@@ -97,6 +98,7 @@ summarize_check_pvalues <- function(x, p_col = "p_value", group = NULL, alpha = 
 #'
 #' @importFrom ggplot2 ggplot aes geom_histogram geom_hline geom_vline
 #'   scale_x_continuous labs theme_minimal facet_wrap
+#' @family across-study summaries
 #' @export
 plot_check_pvalues <- function(x, p_col = "p_value", group = NULL, alpha = 0.05,
                                binwidth = 0.05, fdr = FALSE,

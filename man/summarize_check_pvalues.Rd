@@ -47,3 +47,10 @@ summarize_check_pvalues(tests)
 summarize_check_pvalues(tests, group = "study_id")
 
 }
+\seealso{
+Other across-study summaries:
+\code{\link[=plot_check_pvalues]{plot_check_pvalues()}},
+\code{\link[=report_checks]{report_checks()}},
+\code{\link[=stack_checks]{stack_checks()}}
+}
+\concept{across-study summaries}
