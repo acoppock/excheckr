@@ -50,6 +50,8 @@
 #'   better EPV) or `"lambda.min"` (more covariates, lower in-sample error).
 #' @param .method Regression function for the interacted test (default:
 #'   `estimatr::lm_robust`). Must accept formula and data arguments.
+#' @param study_id Optional character scalar. If provided, a `study_id` column
+#'   holding this value is appended to the returned tibble.
 #' @param quiet Logical. Suppress console output (default `TRUE`).
 #' @param ... Additional arguments passed to `.method`.
 #'
@@ -118,6 +120,7 @@ check_attrition_lasso <- function(
     epv_threshold = 10,
     lasso_se      = c("lambda.1se", "lambda.min"),
     .method       = estimatr::lm_robust,
+    study_id      = NULL,
     quiet         = TRUE,
     ...
 ) {
@@ -314,6 +317,7 @@ check_attrition_lasso <- function(
   })
 
   out <- dplyr::bind_rows(results)
+  if (!is.null(study_id)) out$study_id <- study_id
   if (!quiet) print(out)
   invisible(out)
 }

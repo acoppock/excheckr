@@ -11,18 +11,28 @@
 #' @param .method Regression function to use (default: `estimatr::lm_robust`).
 #'   Must accept formula and data arguments.
 #' @param declaration Optional. A \code{randomizr} declaration object (e.g.,
-#'   from \code{randomizr::declare_ra}). When provided, the joint test uses
-#'   randomization inference via \code{ri2::conduct_ri} instead of the
-#'   parametric test. This is recommended for clustered designs or any design
-#'   where exact inference is desired.
+#'   from \code{randomizr::declare_ra}), or the string \code{"complete"}. When
+#'   provided, the joint test uses randomization inference via
+#'   \code{ri2::conduct_ri} instead of the parametric test. This is recommended
+#'   for clustered designs or any design where exact inference is desired, and
+#'   for multi-arm designs with many covariates, where the multinomial
+#'   likelihood-ratio test's asymptotic reference distribution is unreliable.
+#'   \code{"complete"} is shorthand for complete random assignment holding the
+#'   observed arm sizes fixed; supply a real declaration whenever the design was
+#'   blocked or clustered.
 #' @param sims Integer. Number of simulations for randomization inference
 #'   (default: 1000). Only used when \code{declaration} is provided.
+#' @param study_id Optional character scalar. If provided, a \code{study_id}
+#'   column holding this value is appended to both returned tibbles.
+#' @param flatten Logical. If \code{TRUE}, returns a single tibble with the
+#'   covariate tests and the joint test stacked and distinguished by a
+#'   \code{test} column, rather than a two-element list (default \code{FALSE}).
 #' @param quiet Logical. If \code{TRUE}, suppresses all console output (default
 #'   \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
 #'   \code{map()} or similar.
 #' @param ... Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).
 #'
-#' @return A list with two elements:
+#' @return When \code{flatten = FALSE} (the default), a list with two elements:
 #'   \describe{
 #'     \item{covariate_tests}{A tibble with one row per covariate (or covariate
 #'       level for factors), containing the F-test from regressing each covariate
@@ -30,6 +40,11 @@
 #'     \item{joint_test}{A tibble with a single row containing the joint test
 #'       of all covariates predicting treatment. Columns: F_stat, df1, df2, p_value, nobs.}
 #'   }
+#'   When \code{flatten = TRUE}, a single tibble stacking both, with a
+#'   \code{test} column taking values \code{"covariate"} and \code{"joint"}.
+#'
+#' @seealso \code{\link{check_smd}} for the magnitude of each imbalance, which
+#'   these p-values do not convey.
 #'
 #' @details
 #' For numeric covariates, regresses the covariate on treatment directly and
@@ -65,6 +80,9 @@
 #' # Specific covariates
 #' check_balance(dat, Z, c("X_age", "X_income"))
 #'
+#' # Label the results and return one tibble, ready to stack across studies
+#' check_balance(dat, Z, study_id = "smith_2024_study_1", flatten = TRUE)
+#'
 #' # Multi-armed treatment (uses multinomial LR test)
 #' set.seed(1)
 #' dat2 <- data.frame(
@@ -90,7 +108,8 @@
 #' @importFrom stats as.formula model.matrix model.frame complete.cases pf coef fitted.values
 #' @export
 check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust,
-                          declaration = NULL, sims = 1000, quiet = TRUE, ...) {
+                          declaration = NULL, sims = 1000, study_id = NULL,
+                          flatten = FALSE, quiet = TRUE, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
@@ -204,6 +223,24 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     analysis_data[[cname]] <- covar_mat[, cname]
   }
 
+  if (identical(declaration, "complete")) {
+    # Shorthand for the most common case: complete random assignment with the
+    # observed arm sizes taken as fixed. Equivalent to permuting the observed
+    # treatment vector. Stated as an explicit declaration so the assumption is
+    # visible rather than buried in a permutation loop.
+    if (!requireNamespace("randomizr", quietly = TRUE)) {
+      stop("declaration = 'complete' requires the randomizr package. ",
+           "Install it with install.packages('randomizr').")
+    }
+    z_obs <- analysis_data[[treatment_name]]
+    arm_counts <- table(z_obs)
+    declaration <- randomizr::declare_ra(
+      N          = length(z_obs),
+      m_each     = as.vector(arm_counts),
+      conditions = names(arm_counts)
+    )
+  }
+
   if (!is.null(declaration)) {
     # Randomization inference path: any K
     joint_test <- ri_joint_test(
@@ -239,13 +276,32 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     )
   }
 
-  result <- list(covariate_tests = covariate_tests, joint_test = joint_test)
+  if (!is.null(study_id)) {
+    covariate_tests$study_id <- study_id
+    joint_test$study_id <- study_id
+  }
+
+  if (flatten) {
+    joint_row <- joint_test
+    joint_row$covariate <- NA_character_
+    joint_row$level <- NA_character_
+    result <- dplyr::bind_rows(
+      cbind(test = "covariate", covariate_tests),
+      cbind(test = "joint", joint_row)
+    )
+  } else {
+    result <- list(covariate_tests = covariate_tests, joint_test = joint_test)
+  }
 
   if (!quiet) {
-    cat("Covariate-by-covariate balance tests:\n")
-    print(covariate_tests)
-    cat("\nJoint balance test:\n")
-    print(joint_test)
+    if (flatten) {
+      print(result)
+    } else {
+      cat("Covariate-by-covariate balance tests:\n")
+      print(covariate_tests)
+      cat("\nJoint balance test:\n")
+      print(joint_test)
+    }
   }
 
   invisible(result)

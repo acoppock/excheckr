@@ -309,3 +309,33 @@ test_that("covariates path: f_test p_value is a valid p-value", {
 
   expect_true(res$f_test$p_value >= 0 & res$f_test$p_value <= 1)
 })
+
+
+# study_id ----
+
+attrition_fixture <- function(seed = 42) {
+  set.seed(seed)
+  n <- 300
+  dat <- data.frame(Z = rep(c(0L, 1L), n / 2), X_age = rnorm(n, 50, 10))
+  dat$Y_attitude <- rnorm(n)
+  dat$Y_attitude[which(rbinom(n, 1, ifelse(dat$Z == 1, 0.3, 0.1)) == 1)] <- NA
+  dat
+}
+
+test_that("check_attrition appends study_id in the simple branch", {
+  out <- check_attrition(attrition_fixture(), Z, outcomes = "Y_attitude",
+                         study_id = "smith_2024_study_1")
+  expect_true(all(out$study_id == "smith_2024_study_1"))
+})
+
+test_that("check_attrition appends study_id in the covariate branch", {
+  out <- check_attrition(attrition_fixture(), Z, outcomes = "Y_attitude",
+                         covariates = "X_age", study_id = "smith_2024_study_1")
+  expect_true(all(out$coefficients$study_id == "smith_2024_study_1"))
+  expect_true(all(out$f_test$study_id == "smith_2024_study_1"))
+})
+
+test_that("check_attrition omits study_id by default", {
+  out <- check_attrition(attrition_fixture(), Z, outcomes = "Y_attitude")
+  expect_false("study_id" %in% names(out))
+})

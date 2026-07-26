@@ -10,6 +10,7 @@ check_attrition(
   outcomes = NULL,
   covariates = NULL,
   .method = estimatr::lm_robust,
+  study_id = NULL,
   quiet = TRUE,
   ...
 )
@@ -30,6 +31,9 @@ model (missingness ~ treatment * covariates) to the restricted model
 
 \item{.method}{Regression function to use (default: `estimatr::lm_robust`).
 Must accept formula and data arguments.}
+
+\item{study_id}{Optional character scalar. If provided, a \code{study_id}
+column holding this value is appended to every returned tibble.}
 
 \item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
 \code{FALSE}). Set to \code{TRUE} when calling programmatically inside

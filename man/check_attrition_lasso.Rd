@@ -12,6 +12,7 @@ check_attrition_lasso(
   epv_threshold = 10,
   lasso_se = c("lambda.1se", "lambda.min"),
   .method = estimatr::lm_robust,
+  study_id = NULL,
   quiet = TRUE,
   ...
 )
@@ -38,6 +39,9 @@ better EPV) or `"lambda.min"` (more covariates, lower in-sample error).}
 
 \item{.method}{Regression function for the interacted test (default:
 `estimatr::lm_robust`). Must accept formula and data arguments.}
+
+\item{study_id}{Optional character scalar. If provided, a `study_id` column
+holding this value is appended to the returned tibble.}
 
 \item{quiet}{Logical. Suppress console output (default `TRUE`).}
 

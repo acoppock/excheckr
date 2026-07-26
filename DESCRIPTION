@@ -9,13 +9,14 @@ Authors@R: c(
       role = c("aut", "cre")
     )
   )
-Description: Functions for diagnosing, summarizing, and visualizing missingness 
-    and data integrity in experimental datasets. Includes tools for identifying 
-    missing covariates and producing visual summaries of joint missingness.
+Description: Functions for diagnosing, summarizing, and visualizing covariate
+    balance, differential attrition, missingness, and data integrity in
+    experimental datasets. Includes per-study checks that can be labelled and
+    stacked across many studies, plus triage and uniform-reference diagnostics
+    for the resulting collection of tests.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.3.3
 Imports:
     dplyr,
     estimatr,
@@ -39,3 +40,4 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

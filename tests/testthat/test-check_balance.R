@@ -228,3 +228,66 @@ test_that("RI path with declaration returns a valid p-value", {
   expect_true(is.na(res$joint_test$df1))
   expect_true(is.na(res$joint_test$df2))
 })
+
+
+# study_id, flatten, and the "complete" declaration shorthand ----
+
+balance_fixture <- function(seed = 42) {
+  set.seed(seed)
+  dat <- data.frame(
+    Z        = rep(c(0L, 1L), 100),
+    X_age    = rnorm(200, 50, 10),
+    X_party  = factor(sample(c("D", "R", "I"), 200, replace = TRUE))
+  )
+  dat$X_income <- 50000 + 3000 * dat$Z + rnorm(200, 0, 10000)
+  dat
+}
+
+test_that("study_id is appended to both returned tibbles", {
+  out <- check_balance(balance_fixture(), Z, study_id = "smith_2024_study_1")
+
+  expect_true(all(out$covariate_tests$study_id == "smith_2024_study_1"))
+  expect_equal(out$joint_test$study_id, "smith_2024_study_1")
+})
+
+test_that("study_id is absent by default", {
+  out <- check_balance(balance_fixture(), Z)
+  expect_false("study_id" %in% names(out$covariate_tests))
+  expect_false("study_id" %in% names(out$joint_test))
+})
+
+test_that("flatten stacks the covariate and joint tests into one tibble", {
+  nested <- check_balance(balance_fixture(), Z)
+  flat <- check_balance(balance_fixture(), Z, flatten = TRUE)
+
+  expect_s3_class(flat, "data.frame")
+  expect_equal(nrow(flat), nrow(nested$covariate_tests) + 1)
+  expect_equal(sum(flat$test == "joint"), 1)
+  expect_true(is.na(flat$covariate[flat$test == "joint"]))
+  expect_equal(
+    flat$p_value[flat$test == "joint"],
+    nested$joint_test$p_value
+  )
+})
+
+test_that("flatten carries study_id through", {
+  flat <- check_balance(balance_fixture(), Z, study_id = "s1", flatten = TRUE)
+  expect_true(all(flat$study_id == "s1"))
+})
+
+test_that("declaration = 'complete' runs randomization inference", {
+  skip_if_not_installed("randomizr")
+  skip_if_not_installed("ri2")
+
+  set.seed(9)
+  dat <- data.frame(
+    Z     = factor(rep(c("C", "T1", "T2"), each = 60)),
+    X_age = rnorm(180)
+  )
+  out <- check_balance(dat, Z, declaration = "complete", sims = 25)
+
+  expect_equal(nrow(out$joint_test), 1)
+  expect_gte(out$joint_test$p_value, 0)
+  expect_lte(out$joint_test$p_value, 1)
+  expect_true(is.na(out$joint_test$df1))
+})

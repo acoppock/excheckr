@@ -14,6 +14,8 @@
 #'   (missingness ~ covariates).
 #' @param .method Regression function to use (default: `estimatr::lm_robust`).
 #'   Must accept formula and data arguments.
+#' @param study_id Optional character scalar. If provided, a \code{study_id}
+#'   column holding this value is appended to every returned tibble.
 #' @param quiet Logical. If \code{TRUE}, suppresses all console output (default
 #'   \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
 #'   \code{map()} or similar.
@@ -83,7 +85,8 @@
 #' @importFrom stats coef vcov df.residual pf as.formula
 #' @export
 check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
-                            .method = estimatr::lm_robust, quiet = TRUE, ...) {
+                            .method = estimatr::lm_robust, study_id = NULL,
+                            quiet = TRUE, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
@@ -217,6 +220,10 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
 
     ftest_df <- dplyr::bind_rows(results_ftest)
 
+    if (!is.null(study_id)) {
+      coef_df$study_id <- study_id
+      ftest_df$study_id <- study_id
+    }
 
     if (!quiet) {
       cat("Coefficient estimates (Lin, 2013):\n")
@@ -275,6 +282,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
     })
 
     result_df <- dplyr::bind_rows(results)
+    if (!is.null(study_id)) result_df$study_id <- study_id
 
     if (!quiet) print(result_df)
     invisible(result_df)

@@ -159,3 +159,29 @@ test_that("fewer than 5 missing: n_lasso2 is 0", {
     covariates = c("X_age", "X_income"))
   expect_equal(res$n_lasso2, 0L)
 })
+
+
+# study_id ----
+
+test_that("check_attrition_lasso appends study_id", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 500
+  dat <- data.frame(
+    Z = rep(c(0L, 1L), n / 2),
+    X_age = rnorm(n, 50, 10),
+    X_income = rnorm(n, 50000, 10000)
+  )
+  dat$Y_outcome <- 0.3 * dat$Z + 0.5 * scale(dat$X_age) + rnorm(n)
+  dat$Y_outcome[which(rbinom(n, 1, 0.1) == 1)] <- NA
+
+  out <- check_attrition_lasso(dat, Z, outcomes = "Y_outcome",
+                               covariates = c("X_age", "X_income"),
+                               study_id = "smith_2024_study_1")
+  expect_true(all(out$study_id == "smith_2024_study_1"))
+
+  bare <- check_attrition_lasso(dat, Z, outcomes = "Y_outcome",
+                                covariates = c("X_age", "X_income"))
+  expect_false("study_id" %in% names(bare))
+})

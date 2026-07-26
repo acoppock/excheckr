@@ -11,6 +11,8 @@ check_balance(
   .method = estimatr::lm_robust,
   declaration = NULL,
   sims = 1000,
+  study_id = NULL,
+  flatten = FALSE,
   quiet = TRUE,
   ...
 )
@@ -27,13 +29,25 @@ using tidyselect helpers. If left empty, all `"X_"` columns are used.}
 Must accept formula and data arguments.}
 
 \item{declaration}{Optional. A \code{randomizr} declaration object (e.g.,
-from \code{randomizr::declare_ra}). When provided, the joint test uses
-randomization inference via \code{ri2::conduct_ri} instead of the
-parametric test. This is recommended for clustered designs or any design
-where exact inference is desired.}
+from \code{randomizr::declare_ra}), or the string \code{"complete"}. When
+provided, the joint test uses randomization inference via
+\code{ri2::conduct_ri} instead of the parametric test. This is recommended
+for clustered designs or any design where exact inference is desired, and
+for multi-arm designs with many covariates, where the multinomial
+likelihood-ratio test's asymptotic reference distribution is unreliable.
+\code{"complete"} is shorthand for complete random assignment holding the
+observed arm sizes fixed; supply a real declaration whenever the design was
+blocked or clustered.}
 
 \item{sims}{Integer. Number of simulations for randomization inference
 (default: 1000). Only used when \code{declaration} is provided.}
+
+\item{study_id}{Optional character scalar. If provided, a \code{study_id}
+column holding this value is appended to both returned tibbles.}
+
+\item{flatten}{Logical. If \code{TRUE}, returns a single tibble with the
+covariate tests and the joint test stacked and distinguished by a
+\code{test} column, rather than a two-element list (default \code{FALSE}).}
 
 \item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
 \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
@@ -42,7 +56,7 @@ where exact inference is desired.}
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }
 \value{
-A list with two elements:
+When \code{flatten = FALSE} (the default), a list with two elements:
   \describe{
     \item{covariate_tests}{A tibble with one row per covariate (or covariate
       level for factors), containing the F-test from regressing each covariate
@@ -50,6 +64,8 @@ A list with two elements:
     \item{joint_test}{A tibble with a single row containing the joint test
       of all covariates predicting treatment. Columns: F_stat, df1, df2, p_value, nobs.}
   }
+  When \code{flatten = TRUE}, a single tibble stacking both, with a
+  \code{test} column taking values \code{"covariate"} and \code{"joint"}.
 }
 \description{
 Performs balance checks by regressing each covariate on treatment assignment
@@ -90,6 +106,9 @@ check_balance(dat, Z)
 # Specific covariates
 check_balance(dat, Z, c("X_age", "X_income"))
 
+# Label the results and return one tibble, ready to stack across studies
+check_balance(dat, Z, study_id = "smith_2024_study_1", flatten = TRUE)
+
 # Multi-armed treatment (uses multinomial LR test)
 set.seed(1)
 dat2 <- data.frame(
@@ -107,4 +126,8 @@ if (requireNamespace("randomizr", quietly = TRUE) &&
 }
 }
 
+}
+\seealso{
+\code{\link{check_smd}} for the magnitude of each imbalance, which
+  these p-values do not convey.
 }
