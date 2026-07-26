@@ -64,6 +64,29 @@ test_that("report_checks prefers the flag column when check_attrition_lasso ran"
   expect_equal(rep$attrition$study_id, "b")
 })
 
+test_that("a non-logical flag column is ignored, not read as a check result", {
+  # `flag` is not a reserved name: meta_group_cues carries a character `flag`
+  # column holding actor labels. Reading it as a failure indicator errored.
+  checks <- list(
+    attrition = data.frame(
+      study_id = c("a", "b", "c"),
+      p_value  = c(0.9, 0.01, 0.2),
+      flag     = c(NA, "GOP", "Trump"),
+      stringsAsFactors = FALSE
+    )
+  )
+  rep <- report_checks(checks)
+  expect_equal(rep$attrition$study_id, "b")
+})
+
+test_that("a numeric flag column is also ignored", {
+  checks <- list(
+    attrition = data.frame(study_id = c("a", "b"), p_value = c(0.9, 0.01),
+                           flag = c(0, 1))
+  )
+  expect_equal(report_checks(checks)$attrition$study_id, "b")
+})
+
 test_that("report_checks falls back from attrition_lasso to attrition", {
   both <- example_checks()
   both$attrition_lasso <- data.frame(study_id = "z", flag = TRUE)

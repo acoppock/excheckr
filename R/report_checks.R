@@ -82,7 +82,11 @@ report_checks <- function(checks, alpha = 0.05) {
   attrition <- pluck_check(checks, "attrition")
   if (is.null(attrition)) attrition <- pluck_check(checks, "attrition_lasso")
   if (!is.null(attrition)) {
-    if ("flag" %in% names(attrition)) {
+    # Only treat `flag` as the check result when it is logical. The name is not
+    # reserved: a project may carry an unrelated character column called `flag`
+    # (a party or actor label, say), and reading that as a failure indicator
+    # would either error or silently report the wrong rows.
+    if ("flag" %in% names(attrition) && is.logical(attrition$flag)) {
       # check_attrition_lasso already computed the flag at its own threshold
       out$attrition <- attrition[!is.na(attrition$flag) & attrition$flag, , drop = FALSE]
     } else if ("p_value" %in% names(attrition)) {
