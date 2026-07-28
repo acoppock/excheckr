@@ -7,3 +7,10 @@ LOGFILE.md
 /doc/
 /Meta/
 docs/
+
+# Build and check artifacts (never belong in the repo)
+*.Rcheck/
+*.tar.gz
+Rplots.pdf
+vignettes/*_cache/
+vignettes/*_files/
