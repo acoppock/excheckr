@@ -12,3 +12,4 @@
 ^.*\.Rcheck$
 ^\.\.Rcheck$
 ^vignettes/.*_cache$
+^\.github$
