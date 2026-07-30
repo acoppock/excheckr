@@ -150,7 +150,7 @@ test_that("quiet = FALSE produces output", {
 
 # --- Zero attrition ------------------------------------------------------------
 
-test_that("outcome with no missingness returns F_stat = 0 and p_value = 1", {
+test_that("outcome with no missingness is reported as unestimable, not as p = 1", {
   set.seed(6)
   n <- 100
   dat <- data.frame(
@@ -160,8 +160,35 @@ test_that("outcome with no missingness returns F_stat = 0 and p_value = 1", {
 
   res <- check_attrition(dat, Z, outcomes = "Y")
 
-  expect_equal(res$F_stat, 0)
-  expect_equal(res$p_value, 1)
+  expect_false(res$estimable)
+  expect_true(is.na(res$F_stat))
+  expect_true(is.na(res$p_value))
+  # p = 1 would put a spike at 1 into the uniform-reference diagnostics, which
+  # is what summarize_check_pvalues then reads as a badly non-uniform collection
+  expect_false(isTRUE(res$p_value == 1))
+})
+
+test_that("outcome missing for everyone is also unestimable", {
+  n <- 100
+  dat <- data.frame(Z = rep(c(0L, 1L), n / 2), Y = NA_real_)
+
+  res <- check_attrition(dat, Z, outcomes = "Y")
+
+  expect_false(res$estimable)
+  expect_true(is.na(res$p_value))
+})
+
+test_that("unestimable rows are dropped by the p-value summaries and counted", {
+  set.seed(61)
+  n <- 100
+  dat <- data.frame(Z = rep(c(0L, 1L), n / 2), Y_none = rnorm(n), Y_some = rnorm(n))
+  dat$Y_some[1:20] <- NA
+
+  res <- check_attrition(dat, Z)
+  summary <- summarize_check_pvalues(res)
+
+  expect_equal(summary$n_tests, 1)
+  expect_equal(summary$n_dropped, 1)
 })
 
 # --- Edge cases ----------------------------------------------------------------
@@ -235,7 +262,7 @@ test_that("f_test has one row per outcome", {
   expect_setequal(res$f_test$outcome, c("Y_a", "Y_b"))
 })
 
-test_that("covariates path: zero-attrition outcome yields F_stat = 0 and p_value = 1", {
+test_that("covariates path: zero-attrition outcome is unestimable, not p = 1", {
   set.seed(13)
   n <- 100
   dat <- data.frame(
@@ -247,8 +274,23 @@ test_that("covariates path: zero-attrition outcome yields F_stat = 0 and p_value
   res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
 
   frow <- res$f_test[res$f_test$outcome == "Y", ]
-  expect_equal(frow$F_stat, 0)
-  expect_equal(frow$p_value, 1)
+  expect_false(frow$estimable)
+  expect_true(is.na(frow$F_stat))
+  expect_true(is.na(frow$p_value))
+})
+
+test_that("covariates path: a covariate prefixed by the treatment name is not tested as treatment", {
+  set.seed(131)
+  n <- 400
+  dat <- data.frame(Z = rep(c(0L, 1L), n / 2), Zeal = rnorm(n), X_age = rnorm(n))
+  dat$Y <- rnorm(n)
+  dat$Y[1:40] <- NA
+
+  res <- check_attrition(dat, Z, outcomes = "Y", covariates = c("Zeal", "X_age"))
+
+  # Z plus its two interactions: 3 terms. Prefix matching would have counted
+  # Zeal_c as a treatment term and reported 4.
+  expect_equal(res$f_test$df1, 3L)
 })
 
 test_that("covariates path: quiet = FALSE produces console output", {
@@ -338,4 +380,21 @@ test_that("check_attrition appends study_id in the covariate branch", {
 test_that("check_attrition omits study_id by default", {
   out <- check_attrition(attrition_fixture(), Z, outcomes = "Y_attitude")
   expect_false("study_id" %in% names(out))
+})
+
+test_that("estimable holds the invariant estimable == !is.na(p_value)", {
+  set.seed(71)
+  n <- 200
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n))
+  dat$Y_none <- rnorm(n)                       # no attrition: unestimable
+  dat$Y_some <- rnorm(n); dat$Y_some[1:40] <- NA
+  dat$Y_all <- NA_real_                        # everybody missing: unestimable
+
+  res <- check_attrition(dat, Z, outcomes = c("Y_none", "Y_some", "Y_all"))
+  expect_equal(res$estimable, !is.na(res$p_value))
+  expect_equal(res$estimable, c(FALSE, TRUE, FALSE))
+
+  lin <- check_attrition(dat, Z, outcomes = c("Y_none", "Y_some", "Y_all"),
+                         covariates = "X_age")$f_test
+  expect_equal(lin$estimable, !is.na(lin$p_value))
 })

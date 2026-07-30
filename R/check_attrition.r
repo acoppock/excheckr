@@ -16,20 +16,54 @@
 #'   Must accept formula and data arguments.
 #' @param study_id Optional character scalar. If provided, a \code{study_id}
 #'   column holding this value is appended to every returned tibble.
-#' @param quiet Logical. If \code{TRUE}, suppresses all console output (default
-#'   \code{FALSE}). Set to \code{TRUE} when calling programmatically inside
-#'   \code{map()} or similar.
+#' @param quiet Logical. The default \code{TRUE} returns the result, which
+#'   auto-prints at the console. \code{FALSE} prints a labelled report instead
+#'   and returns the same object invisibly, so nothing is printed twice.
 #' @param ... Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).
 #'
-#' @return When \code{covariates} is \code{NULL}, a tibble with one row per outcome
-#'   containing the treatment coefficient from regressing missingness on treatment.
+#' @return When \code{covariates} is \code{NULL}, a tibble with one row per
+#'   outcome and columns \code{outcome}, \code{F_stat}, \code{df1}, \code{df2},
+#'   \code{p_value}, \code{nobs}, and \code{estimable}. The test is the omnibus
+#'   F-test from regressing the missingness indicator on treatment, so it covers
+#'   multi-armed treatments as well as binary ones; it reports no coefficient,
+#'   because with three or more arms there is no single number to report. Use
+#'   \code{covariates} (below) if you want the coefficients themselves.
+#'
 #'   When \code{covariates} is provided, a list with two elements:
 #'   \describe{
 #'     \item{coefficients}{A tibble of all coefficient estimates from the Lin model
 #'       (treatment, demeaned covariates, and their interactions).}
 #'     \item{f_test}{A tibble with one row per outcome containing the Wald F-test
-#'       of joint significance of treatment and treatment-by-covariate interactions.}
+#'       of joint significance of treatment and treatment-by-covariate
+#'       interactions, plus an \code{estimable} column.}
 #'   }
+#'
+#' @section When there is no test to run:
+#' \code{estimable} says whether a test was actually computed, and holds the
+#' invariant \code{estimable == !is.na(p_value)}. It is \code{FALSE} in three
+#' situations: the missingness indicator does not vary, because nobody dropped out
+#' or everybody did; the Wald test is defeated by rank deficiency; or the model
+#' fits but the robust covariance matrix is degenerate, which happens at very low
+#' missingness and yields no statistic.
+#'
+#' None of those is a test result. Earlier versions reported the first as
+#' \code{p_value = 1}, which mattered because a corpus contains many outcomes with
+#' no attrition at all: in one real collection, 849 of 1320 rows. A pile of ones at
+#' the top of the distribution makes \code{\link{summarize_check_pvalues}} report a
+#' badly non-uniform collection when nothing whatsoever is wrong, and it moves
+#' \code{pct_below} in the reassuring direction while it does so.
+#'
+#' @section Clustered designs:
+#' Passing \code{clusters} and \code{se_type = "CR2"} is enough for the
+#' covariate-free test, which is well calibrated (4.3 percent rejection at a
+#' nominal 5 percent in a 30-cluster simulation). It is not enough for the
+#' covariate-adjusted Wald test, which rejects about 12 percent of the time in the
+#' same design. The cause is not the denominator degrees of freedom, so no
+#' correction fixes it: substituting the number of clusters for the residual
+#' degrees of freedom moves the rejection rate from 11.4 to 11.2 percent. The
+#' cluster-robust variance estimator is itself biased downward when treatment is
+#' constant within cluster. A warning is emitted when \code{clusters} is supplied
+#' with \code{covariates}; treat that p-value as descriptive.
 #'
 #' @details
 #' For each outcome variable, creates a missingness indicator (1 if missing, 0 otherwise)
@@ -91,6 +125,11 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
+  # Detect a clusters argument in the dots, so the multi-df Wald test can warn
+  # about its own reference distribution. See the "Clustered designs" section.
+  dots_call <- match.call(expand.dots = FALSE)$...
+  has_clusters <- "clusters" %in% names(dots_call)
+
   # Handle outcome selection
   outcomes_quo <- rlang::enquo(outcomes)
   if (rlang::quo_is_null(outcomes_quo)) {
@@ -131,6 +170,14 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
   if (has_covariates) {
     # --- Lin (2013) model with F-test ---
 
+    if (has_clusters) {
+      warning("check_attrition: the covariate-adjusted joint Wald test ",
+              "over-rejects under cluster randomization (about 12 percent at a ",
+              "nominal 5 percent with 30 clusters), and no degrees-of-freedom ",
+              "correction repairs it. Read its p-value as descriptive. The ",
+              "covariate-free test from the same function is well calibrated.")
+    }
+
     # Demean covariates (replicating lm_lin)
     demeaned <- demean_covariates(data, covar_names)
     demeaned_names <- colnames(demeaned)
@@ -149,15 +196,19 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
         analysis_data[[miss_col]] <- as.integer(is.na(analysis_data[[v]]))
       }
 
-      # Short-circuit: no attrition at all → trivial result
+      # No variation in the missingness indicator means there is no test to run,
+      # in either direction: nobody dropped out, or everybody did. Report it as
+      # unestimable rather than inventing p = 1, which would otherwise pile up
+      # as a spike at 1 in the uniform-reference diagnostics downstream.
       miss_vals <- analysis_data[[miss_col]]
-      if (all(miss_vals == 0, na.rm = TRUE)) {
+      if (!has_variation(miss_vals)) {
         results_coef[[v]] <- tibble::tibble(
-          outcome = v, term = treatment_name, estimate = 0,
-          std.error = NA_real_, statistic = NA_real_, p.value = 1
+          outcome = v, term = treatment_name, estimate = NA_real_,
+          std.error = NA_real_, statistic = NA_real_, p.value = NA_real_
         )
         results_ftest[[v]] <- tibble::tibble(
-          outcome = v, F_stat = 0, df1 = NA_integer_, df2 = NA_integer_, p_value = 1
+          outcome = v, F_stat = NA_real_, df1 = NA_integer_, df2 = NA_integer_,
+          p_value = NA_real_, estimable = FALSE
         )
         next
       }
@@ -174,34 +225,38 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       coef_table$outcome <- v
       results_coef[[v]] <- coef_table
 
-      # Wald F-test: jointly test treatment and all treatment:covariate interactions.
-      # Matches exact name (binary Z), factor-level names (Zlevel), and all
-      # interaction terms involving treatment regardless of position.
-      all_coef_names <- names(stats::coef(fit_full))
-      test_terms <- all_coef_names[
-        startsWith(all_coef_names, treatment_name) |
-        grepl(paste0(":", treatment_name), all_coef_names)
-      ]
-
-      b <- stats::coef(fit_full)[test_terms]
-      V <- stats::vcov(fit_full)[test_terms, test_terms]
+      # Wald F-test: jointly test treatment and all treatment:covariate
+      # interactions. In a fully interacted model every coefficient that is
+      # neither the intercept nor a covariate main effect is a treatment term,
+      # so take that complement rather than matching on the treatment name: a
+      # covariate whose name merely begins with the treatment name (Zeal_c
+      # against a treatment called Z) would otherwise be swept into the test.
+      b_all <- stats::coef(fit_full)
+      bare <- gsub("`", "", names(b_all), fixed = TRUE)
+      test_terms <- names(b_all)[bare != "(Intercept)" & !bare %in% demeaned_names]
       q <- length(test_terms)
-
       df2 <- stats::df.residual(fit_full)
-      W <- tryCatch(
-        as.numeric(t(b) %*% solve(V) %*% b),
-        error = function(e) NULL
-      )
+
+      # Rank deficiency shows up either as an NA coefficient (the term was
+      # dropped, so vcov has no row for it) or as a singular V.
+      W <- tryCatch({
+        b <- b_all[test_terms]
+        if (anyNA(b)) stop("rank deficient", call. = FALSE)
+        V <- stats::vcov(fit_full)[test_terms, test_terms, drop = FALSE]
+        as.numeric(t(b) %*% solve(V) %*% b)
+      }, error = function(e) NULL)
 
       if (is.null(W)) {
         warning(paste("F-test not estimable for outcome:", v,
-                      "(singular covariance matrix: too many covariates or near-collinearity)"))
+                      "(rank-deficient or singular covariance matrix:",
+                      "too many covariates or near-collinearity)"))
         results_ftest[[v]] <- tibble::tibble(
           outcome = v,
           F_stat = NA_real_,
           df1 = as.integer(q),
           df2 = as.integer(df2),
-          p_value = NA_real_
+          p_value = NA_real_,
+          estimable = FALSE
         )
       } else {
         F_stat <- W / q
@@ -211,7 +266,8 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
           F_stat = F_stat,
           df1 = as.integer(q),
           df2 = as.integer(df2),
-          p_value = p_value
+          p_value = p_value,
+          estimable = !is.na(p_value)
         )
       }
     }
@@ -226,15 +282,16 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       ftest_df$study_id <- study_id
     }
 
+    result <- list(coefficients = coef_df, f_test = ftest_df)
+
     if (!quiet) {
       cat("Coefficient estimates (Lin, 2013):\n")
       print(coef_df)
       cat("\nF-test of joint significance (treatment + treatment x covariate interactions):\n")
       print(ftest_df)
+      return(invisible(result))
     }
-
-    result <- list(coefficients = coef_df, f_test = ftest_df)
-    invisible(result)
+    result
 
   } else {
     # --- Original behavior: simple missingness ~ treatment ---
@@ -252,16 +309,20 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
         data[[miss_col]] <- as.integer(is.na(data[[v]]))
       }
 
-      # If no attrition at all, return trivial result immediately
+      # No variation in the missingness indicator means there is no test to run,
+      # in either direction: nobody dropped out, or everybody did. Report it as
+      # unestimable rather than inventing p = 1, which would otherwise pile up
+      # as a spike at 1 in the uniform-reference diagnostics downstream.
       miss_vals <- data[[miss_col]]
-      if (all(miss_vals == 0, na.rm = TRUE)) {
+      if (!has_variation(miss_vals)) {
         return(tibble::tibble(
-          outcome = v,
-          F_stat  = 0,
-          df1     = NA_integer_,
-          df2     = NA_integer_,
-          p_value = 1,
-          nobs    = as.integer(sum(!is.na(miss_vals)))
+          outcome   = v,
+          F_stat    = NA_real_,
+          df1       = NA_integer_,
+          df2       = NA_integer_,
+          p_value   = NA_real_,
+          nobs      = as.integer(sum(!is.na(miss_vals))),
+          estimable = FALSE
         ))
       }
 
@@ -270,23 +331,28 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
       form <- stats::as.formula(paste(miss_col, "~", treatment_name))
       fit <- .method(form, data = data, ...)
       gl <- broom::glance(fit)
-      # Use fit$k - 1 for df1: glance() returns a data.frame whose $df
-      # partial-matches $df.residual, so gl$df is unreliable.
       tibble::tibble(
-        outcome = v,
-        F_stat  = gl$statistic,
-        df1     = as.integer(fit$k - 1L),
-        df2     = as.integer(gl$df.residual),
-        p_value = gl$p.value,
-        nobs    = as.integer(gl$nobs)
+        outcome   = v,
+        F_stat    = gl$statistic,
+        df1       = model_df1(fit),
+        df2       = as.integer(gl$df.residual),
+        p_value   = gl$p.value,
+        nobs      = as.integer(gl$nobs),
+        # The model can fit and still yield no statistic, when the robust
+        # covariance matrix is degenerate at very low missingness. Key estimable
+        # off the p-value rather than off reaching this line.
+        estimable = !is.na(gl$p.value)
       )
     })
 
     result_df <- dplyr::bind_rows(results)
     if (!is.null(study_id)) result_df$study_id <- study_id
 
-    if (!quiet) print(result_df)
-    invisible(result_df)
+    if (!quiet) {
+      print(result_df)
+      return(invisible(result_df))
+    }
+    result_df
   }
 }
 

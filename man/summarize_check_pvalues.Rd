@@ -24,8 +24,8 @@ call site.}
 \item{alpha}{Rejection threshold (default \code{0.05}).}
 }
 \value{
-A one-row tibble with columns \code{n_tests}, \code{n_below},
-  \code{pct_below}, \code{expected_below}, \code{n_below_fdr},
+A one-row tibble with columns \code{n_tests}, \code{n_dropped},
+  \code{n_below}, \code{pct_below}, \code{expected_below}, \code{n_below_fdr},
   \code{pct_below_fdr}, and \code{ks_p}.
 }
 \description{
@@ -39,6 +39,30 @@ Reports the raw rejection rate, the rejection rate after a Benjamini-Hochberg
 false-discovery-rate adjustment, and a Kolmogorov-Smirnov test of the null
 that the p-values are uniform.
 }
+\section{Tests that could not be run}{
+
+Rows with a missing p-value are excluded, and \code{n_dropped} counts them.
+Read it: a large \code{n_dropped} means \code{n_tests} describes a subsample
+selected on estimability rather than the whole collection, and the summary
+says nothing about the studies that dropped out. This is common in practice.
+The joint balance test relies on \code{nnet::multinom}, which fails to
+converge on small strata, and outcomes with no attrition at all support no
+attrition test; in one real corpus of 1143 joint balance tests, 802 were
+unestimable.
+}
+
+\section{What ks_p does and does not tell you}{
+
+The Kolmogorov-Smirnov test assumes the p-values are independent, and design
+checks usually are not. Within a study, the indicators of one factor covariate
+are mechanically dependent, correlated covariates add more, and the joint test
+is a function of all of them. A small \code{ks_p} on a stacked collection is
+therefore evidence about the collection's shape but not a calibrated test, and
+dependence rather than a design problem is the first thing to suspect. The
+comparison of \code{pct_below} against \code{expected_below} is the more robust
+headline.
+}
+
 \examples{
 set.seed(1)
 tests <- data.frame(study_id = rep(letters[1:5], each = 20),

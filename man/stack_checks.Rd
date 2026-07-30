@@ -8,7 +8,8 @@ stack_checks(
   dir = "checks",
   pattern = "_checks\\\\.rds$",
   exclude = "^all_checks\\\\.rds$",
-  elements = NULL
+  elements = NULL,
+  warn_schema = TRUE
 )
 }
 \arguments{
@@ -25,6 +26,12 @@ over a directory that already holds a stacked file is safe.}
 \item{elements}{Character vector naming the list elements to stack, or
 \code{NULL} (default) to stack the union of element names found across
 all files.}
+
+\item{warn_schema}{Logical. Warn when the files contributing one element
+disagree about their columns (default \code{TRUE}). Set \code{FALSE} in a
+project where that is expected: a corpus whose studies are stratified on
+different variables produces different grouping columns by design, and the
+warning cannot tell that apart from staleness.}
 }
 \value{
 A named list of tibbles, one per element name.
@@ -43,6 +50,19 @@ before binding, so a study that contributes nothing to one check does not
 break the stack for the others. An element present in some files but not
 others is still returned, built from whichever files have it.
 }
+\section{Stale files hide in a successful stack}{
+
+\code{dplyr::bind_rows} unions column names and fills the gaps with \code{NA}.
+That tolerance is what lets a study which skipped one check stack alongside
+studies that ran it, and it is also how a stale file hides: when one study's
+results predate a change in what a check returns, its rows arrive missing the new
+columns while still carrying whatever the old version put in the shared ones. The
+stack succeeds, the corpus looks fully re-run, and it is not. A real instance:
+two per-study files a day older than the rest left \code{estimable} as \code{NA}
+on eight rows and shifted the count of informative attrition tests. Hence the
+warning, and hence \code{warn_schema}.
+}
+
 \examples{
 d <- tempfile()
 dir.create(d)

@@ -35,21 +35,28 @@ Must accept formula and data arguments.}
 \item{study_id}{Optional character scalar. If provided, a \code{study_id}
 column holding this value is appended to every returned tibble.}
 
-\item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
-\code{FALSE}). Set to \code{TRUE} when calling programmatically inside
-\code{map()} or similar.}
+\item{quiet}{Logical. The default \code{TRUE} returns the result, which
+auto-prints at the console. \code{FALSE} prints a labelled report instead
+and returns the same object invisibly, so nothing is printed twice.}
 
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }
 \value{
-When \code{covariates} is \code{NULL}, a tibble with one row per outcome
-  containing the treatment coefficient from regressing missingness on treatment.
+When \code{covariates} is \code{NULL}, a tibble with one row per
+  outcome and columns \code{outcome}, \code{F_stat}, \code{df1}, \code{df2},
+  \code{p_value}, \code{nobs}, and \code{estimable}. The test is the omnibus
+  F-test from regressing the missingness indicator on treatment, so it covers
+  multi-armed treatments as well as binary ones; it reports no coefficient,
+  because with three or more arms there is no single number to report. Use
+  \code{covariates} (below) if you want the coefficients themselves.
+
   When \code{covariates} is provided, a list with two elements:
   \describe{
     \item{coefficients}{A tibble of all coefficient estimates from the Lin model
       (treatment, demeaned covariates, and their interactions).}
     \item{f_test}{A tibble with one row per outcome containing the Wald F-test
-      of joint significance of treatment and treatment-by-covariate interactions.}
+      of joint significance of treatment and treatment-by-covariate
+      interactions, plus an \code{estimable} column.}
   }
 }
 \description{
@@ -72,6 +79,37 @@ compares this to the restricted model \code{missingness ~ demeaned covariates},
 testing whether treatment and its interactions with covariates jointly predict
 attrition.
 }
+\section{When there is no test to run}{
+
+\code{estimable} says whether a test was actually computed, and holds the
+invariant \code{estimable == !is.na(p_value)}. It is \code{FALSE} in three
+situations: the missingness indicator does not vary, because nobody dropped out
+or everybody did; the Wald test is defeated by rank deficiency; or the model
+fits but the robust covariance matrix is degenerate, which happens at very low
+missingness and yields no statistic.
+
+None of those is a test result. Earlier versions reported the first as
+\code{p_value = 1}, which mattered because a corpus contains many outcomes with
+no attrition at all: in one real collection, 849 of 1320 rows. A pile of ones at
+the top of the distribution makes \code{\link{summarize_check_pvalues}} report a
+badly non-uniform collection when nothing whatsoever is wrong, and it moves
+\code{pct_below} in the reassuring direction while it does so.
+}
+
+\section{Clustered designs}{
+
+Passing \code{clusters} and \code{se_type = "CR2"} is enough for the
+covariate-free test, which is well calibrated (4.3 percent rejection at a
+nominal 5 percent in a 30-cluster simulation). It is not enough for the
+covariate-adjusted Wald test, which rejects about 12 percent of the time in the
+same design. The cause is not the denominator degrees of freedom, so no
+correction fixes it: substituting the number of clusters for the residual
+degrees of freedom moves the rejection rate from 11.4 to 11.2 percent. The
+cluster-robust variance estimator is itself biased downward when treatment is
+constant within cluster. A warning is emitted when \code{clusters} is supplied
+with \code{covariates}; treat that p-value as descriptive.
+}
+
 \examples{
 set.seed(42)
 n <- 200
@@ -105,7 +143,6 @@ if (requireNamespace("randomizr", quietly = TRUE)) {
 }
 \seealso{
 Other per-study checks:
-\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
 \code{\link[=check_balance]{check_balance()}},
 \code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
 \code{\link[=check_missingness_nona]{check_missingness_nona()}},
