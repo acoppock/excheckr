@@ -14,6 +14,7 @@ check_balance(
   study_id = NULL,
   flatten = FALSE,
   quiet = TRUE,
+  max_orders_apart = 6,
   ...
 )
 }
@@ -49,9 +50,18 @@ column holding this value is appended to both returned tibbles.}
 covariate tests and the joint test stacked and distinguished by a
 \code{test} column, rather than a two-element list (default \code{FALSE}).}
 
-\item{quiet}{Logical. If \code{TRUE}, suppresses all console output (default
-\code{FALSE}). Set to \code{TRUE} when calling programmatically inside
-\code{map()} or similar.}
+\item{quiet}{Logical. The default \code{TRUE} returns the result, which
+auto-prints at the console. \code{FALSE} prints a labelled report instead
+and returns the same object invisibly, so nothing is printed twice.}
+
+\item{max_orders_apart}{How far the joint Wald p-value may fall below the
+classical F p-value on the same fit, in orders of magnitude, before the joint
+test is suppressed with a warning instead of reported (default \code{6}). The
+two forms test the same hypothesis and differ only in that the Wald form
+inverts the coefficient covariance matrix, so a large gap indicates a failed
+inversion rather than real imbalance. See the section below. Only the binary,
+no-\code{declaration} path uses this; the randomization-inference path inverts
+nothing and needs no such guard.}
 
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }
@@ -114,6 +124,86 @@ comparable across all three; \code{F_stat} is not. Group by \code{statistic}
 before comparing or plotting the statistics themselves.
 }
 
+\section{Clustered designs}{
+
+The parametric joint test over-rejects badly under cluster randomization, at
+about 13 percent against a nominal 5 percent in a 30-cluster simulation, even
+when \code{clusters} and \code{se_type = "CR2"} are supplied. The denominator
+degrees of freedom are not the cause and no correction repairs it: substituting
+the cluster count for the residual degrees of freedom moves the rate from 11.4
+to 11.2 percent. The cluster-robust variance estimator is itself biased
+downward because treatment is constant within cluster, so the effective sample
+size is the number of clusters. Supplying \code{declaration} brings the same
+design to 4.5 percent, and a warning is emitted when \code{clusters} is passed
+without one.
+}
+
+\section{When the joint test cannot be trusted}{
+
+The joint test is a Wald test, so it inverts the covariance matrix of the
+coefficients rather than reading its diagonal. When that matrix is
+near-singular, its inverse is dominated by numerical noise and the statistic can
+come out arbitrarily large while every marginal standard error still looks
+reasonable. The result is a p-value that is not merely anti-conservative but
+impossible.
+
+Real instances, all found in working meta-analysis corpora:
+\itemize{
+  \item 1578 respondents, 37 covariates, 1511 household clusters: joint
+    \code{p = 5.8e-108} while no covariate-by-covariate p-value fell below 0.09.
+  \item 2937 respondents, 40 covariates, no clustering: joint
+    \code{p = 1.5e-248} against a classical \code{p = 0.23}.
+  \item 134 respondents, 5 covariates, no clustering: joint \code{p = 3.6e-12}
+    against a classical \code{p = 0.07}.
+}
+In the first case the marginal robust standard errors were within one percent of
+the classical ones, so nothing on the diagonal gave the problem away. The
+reciprocal condition number of the covariance matrix was \code{1.1e-07} against
+0.24 to 0.86 in well-behaved fits, and the classical F on the same fit was 0.94
+with \code{p = 0.58}.
+
+Dissecting the third case found a covariance matrix with one eigenvalue five
+orders of magnitude below the rest, which inversion amplifies by the reciprocal.
+The design included a continuous age covariate and a binned version of the same
+variable, so the near-null direction came from carrying two parameterizations of
+one measurement. Redundant encodings of the same variable are worth looking for
+first when this fires, along with pairs such as a female indicator beside a
+woman indicator, or a party indicator beside a three-category party factor.
+
+Ill-conditioning on its own is not sufficient to produce the pathology, and
+simulated data with condition numbers as bad as \code{4e-06} yields perfectly
+sane p-values. That is why the guard is the comparison against the classical F
+rather than a threshold on the condition number: the classical F tests the same
+hypothesis on the same fit and differs only in not inverting anything, so it
+detects the failure without needing a theory of when the failure occurs.
+
+When the Wald p-value falls more than \code{max_orders_apart} orders of magnitude
+below the classical one, the joint test reports \code{NA} with
+\code{estimable = FALSE} and warns, naming both p-values and the condition
+number. The default of 6 orders is far outside anything heteroskedasticity or
+clustering produces legitimately, and it deliberately leaves alone the separate
+case of a fit with genuinely few clusters, where the two p-values disagree by a
+factor rather than by orders of magnitude and the remedy is
+\code{declaration} rather than a smaller covariate set.
+
+Remedies, in order: look for redundant parameterizations and drop one; reduce the
+covariate set; or pass \code{declaration}, since randomization inference compares
+a statistic to its permutation distribution and inverts no matrix.
+}
+
+\section{How many observations per coefficient}{
+
+Calibration is governed by \eqn{N/q}, where \eqn{q} is the number of
+coefficients the test estimates. Above roughly 30 observations per coefficient
+the tests sit at nominal; below about 10 they are anti-conservative enough to
+mislead. For the joint test \eqn{q = (K-1)p} with \eqn{p} the number of
+model-matrix columns, so arms and covariates both inflate it. The
+covariate-by-covariate tests escape this only when treatment is binary, which
+makes each a single-degree-of-freedom test; with \eqn{K} arms each becomes a
+\eqn{K-1} degree-of-freedom test and is subject to the same problem. See
+\code{vignette("balance_testing")}.
+}
+
 \examples{
 set.seed(42)
 dat <- data.frame(
@@ -157,7 +247,6 @@ if (requireNamespace("randomizr", quietly = TRUE) &&
 
 Other per-study checks:
 \code{\link[=check_attrition]{check_attrition()}},
-\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
 \code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
 \code{\link[=check_missingness_nona]{check_missingness_nona()}},
 \code{\link[=check_smd]{check_smd()}},

@@ -55,6 +55,156 @@ auto_select_vars <- function(data, prefix = "X_", exclude_suffixes = c("_nona", 
 }
 
 
+#' Weighted mean and standard deviation over a row subset
+#'
+#' Used by \code{check_smd} so that standardized mean differences can be computed
+#' on the same weighted basis as the balance tests they sit beside. With unit
+#' weights these reduce to \code{mean} and \code{sd}: the variance denominator is
+#' \code{sum(w) - 1}, which equals \code{n - 1} when every weight is 1.
+#'
+#' @param x Numeric vector.
+#' @param w Numeric weights, the same length as \code{x}.
+#' @param rows Logical index selecting the rows to use.
+#' @return A length-1 numeric, \code{NA} when fewer than the required number of
+#'   non-missing observations remain.
+#' @keywords internal
+#' @noRd
+weighted_mean <- function(x, w, rows) {
+  ok <- rows & !is.na(x) & !is.na(w)
+  if (!any(ok)) return(NA_real_)
+  sum(x[ok] * w[ok]) / sum(w[ok])
+}
+
+#' @rdname weighted_mean
+#' @noRd
+weighted_sd <- function(x, w, rows) {
+  ok <- rows & !is.na(x) & !is.na(w)
+  if (sum(ok) < 2L) return(NA_real_)
+  mu <- sum(x[ok] * w[ok]) / sum(w[ok])
+  denom <- sum(w[ok]) - 1
+  if (denom <= 0) return(NA_real_)
+  sqrt(sum(w[ok] * (x[ok] - mu)^2) / denom)
+}
+
+
+#' Reciprocal condition number of a fit's slope covariance matrix
+#'
+#' A Wald test inverts the covariance matrix of the coefficients it tests, so its
+#' statistic is only as trustworthy as that matrix's conditioning. The marginal
+#' standard errors on the diagonal can look entirely reasonable while the matrix as
+#' a whole is near-singular, in which case the inverse is dominated by numerical
+#' noise and the statistic can come out arbitrarily large.
+#'
+#' The classical F statistic is computed from residual sums of squares rather than
+#' by inversion, which is why it stays sane on the same fit and why a disagreement
+#' between the two is the signature of this problem rather than of real imbalance.
+#'
+#' @param fit A fitted model.
+#' @param drop_intercept Exclude the intercept row and column (default
+#'   \code{TRUE}), since the intercept is not part of the joint hypothesis.
+#' @return Reciprocal condition number in [0, 1], where small means badly
+#'   conditioned, or \code{NA_real_} when the matrix cannot be read.
+#' @keywords internal
+#' @noRd
+covariance_rcond <- function(fit, drop_intercept = TRUE) {
+  v <- tryCatch(stats::vcov(fit), error = function(e) NULL)
+  if (is.null(v) || !is.matrix(v) || nrow(v) < 1) return(NA_real_)
+  if (drop_intercept) {
+    nm <- gsub("`", "", rownames(v), fixed = TRUE)
+    keep <- is.null(nm) | nm != "(Intercept)"
+    v <- v[keep, keep, drop = FALSE]
+  }
+  if (nrow(v) < 1 || anyNA(v)) return(NA_real_)
+  out <- tryCatch(1 / kappa(v, exact = TRUE), error = function(e) NA_real_)
+  if (!is.finite(out)) return(NA_real_)
+  out
+}
+
+
+#' Classical omnibus F p-value, computed without inverting anything
+#'
+#' The classical F comes from a comparison of residual sums of squares, so unlike a
+#' Wald statistic it never inverts the coefficient covariance matrix and stays
+#' finite and sane on a fit whose covariance matrix is near-singular. That makes it
+#' a free sanity check on the reported Wald p-value: the two answer the same
+#' question and cannot legitimately differ by many orders of magnitude.
+#'
+#' Weights are ignored, so on a weighted fit this is an approximation. It is used
+#' only to decide whether the Wald p-value is credible, never reported as a result.
+#'
+#' @param fit A fitted model, whose point estimates are assumed to be (weighted) OLS.
+#' @param y The response vector the fit was computed on.
+#' @return A p-value, or \code{NA_real_} when it cannot be computed.
+#' @keywords internal
+#' @noRd
+classical_f_pvalue <- function(fit, y) {
+  fv <- tryCatch(stats::fitted.values(fit), error = function(e) NULL)
+  if (is.null(fv) || length(fv) == 0) return(NA_real_)
+  # A fit drops incomplete rows, so align on the rows it actually used.
+  if (length(fv) != length(y)) {
+    idx <- suppressWarnings(as.integer(names(fv)))
+    if (anyNA(idx) || length(idx) != length(fv)) return(NA_real_)
+    y <- y[idx]
+  }
+  ok <- is.finite(fv) & is.finite(y)
+  if (sum(ok) < 3L) return(NA_real_)
+  y <- y[ok]; fv <- fv[ok]
+  q <- model_df1(fit)
+  n <- length(y)
+  df_res <- n - q - 1L
+  if (is.na(q) || q < 1L || df_res < 1L) return(NA_real_)
+  rss <- sum((y - fv)^2)
+  tss <- sum((y - mean(y))^2)
+  if (!is.finite(rss) || !is.finite(tss) || tss <= 0 || rss <= 0) return(NA_real_)
+  f_stat <- ((tss - rss) / q) / (rss / df_res)
+  if (!is.finite(f_stat) || f_stat < 0) return(NA_real_)
+  stats::pf(f_stat, q, df_res, lower.tail = FALSE)
+}
+
+
+#' Numerator degrees of freedom of a fitted model's omnibus test
+#'
+#' The number of estimated non-intercept coefficients. Reads the coefficient
+#' vector rather than \code{fit$k}, which exists only on \code{estimatr} fits: with
+#' \code{.method = stats::lm}, \code{fit$k} is \code{NULL}, \code{NULL - 1L} is
+#' \code{integer(0)}, and a zero-length column silently collapses the surrounding
+#' \code{tibble()} to zero rows, so every test quietly disappeared rather than
+#' erroring.
+#'
+#' Counting non-\code{NA} coefficients also handles rank deficiency correctly. An
+#' aliased term carries an \code{NA} coefficient and estimates nothing, so it
+#' should not be charged a degree of freedom, whereas \code{fit$k} counts it.
+#'
+#' @param fit A fitted model.
+#' @return Integer, or \code{NA_integer_} when the coefficients cannot be read.
+#' @keywords internal
+#' @noRd
+model_df1 <- function(fit) {
+  b <- tryCatch(stats::coef(fit), error = function(e) NULL)
+  if (is.null(b)) return(NA_integer_)
+  nm <- names(b)
+  keep <- !is.na(b)
+  if (!is.null(nm)) keep <- keep & gsub("`", "", nm, fixed = TRUE) != "(Intercept)"
+  as.integer(sum(keep))
+}
+
+
+#' Does a vector take more than one non-missing value?
+#'
+#' Guard for tests whose dependent variable may be constant. A missingness
+#' indicator that is all zeros (nobody dropped out) or all ones (everybody did)
+#' supports no test at all, and reporting such a case as a p-value of 1 would
+#' put a spike at 1 into the uniform-reference diagnostics.
+#'
+#' @param x A vector.
+#' @return \code{TRUE} when \code{x} has at least two distinct non-missing values.
+#' @keywords internal
+#' @noRd
+has_variation <- function(x) {
+  length(unique(x[!is.na(x)])) > 1L
+}
+
+
 #' Statistical mode
 #'
 #' Computes the most frequent (modal) value of a vector.
@@ -155,7 +305,8 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     df1       = NA_integer_,
     df2       = NA_integer_,
     p_value   = NA_real_,
-    nobs      = as.integer(n)
+    nobs      = as.integer(n),
+    estimable = FALSE
   )
 
   # Check for empty treatment groups after complete-case filtering
@@ -204,7 +355,8 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     df1       = as.integer(q),
     df2       = NA_integer_,
     p_value   = p_value,
-    nobs      = as.integer(n)
+    nobs      = as.integer(n),
+    estimable = TRUE
   )
 }
 
@@ -270,6 +422,7 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
     df1       = NA_integer_,
     df2       = NA_integer_,
     p_value   = p_value,
-    nobs      = as.integer(n)
+    nobs      = as.integer(n),
+    estimable = TRUE
   )
 }

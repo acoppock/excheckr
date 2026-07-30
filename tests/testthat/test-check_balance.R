@@ -347,3 +347,127 @@ test_that("statistic distinguishes the paths once results are stacked", {
   # sitting in one F_stat column.
   expect_equal(sort(joint$statistic), c("F", "LR/df"))
 })
+
+# --- .method portability (fit$k was estimatr-specific) -------------------------
+
+test_that(".method = stats::lm populates both tables", {
+  set.seed(91)
+  n <- 200
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n), X_inc = rnorm(n),
+                    X_party = factor(sample(c("D", "R", "I"), n, TRUE)))
+
+  res <- check_balance(dat, Z, .method = stats::lm)
+
+  # fit$k is NULL on an lm, and NULL - 1L is integer(0), which silently
+  # collapsed the surrounding tibble to zero rows
+  expect_gt(nrow(res$covariate_tests), 0)
+  expect_equal(nrow(res$joint_test), 1)
+  expect_false(is.na(res$joint_test$p_value))
+  expect_true(all(res$covariate_tests$df1 >= 1))
+})
+
+test_that("df1 matches the estimatr-specific formula on full-rank fits", {
+  set.seed(92)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+  res <- check_balance(dat, Z)
+
+  fit <- estimatr::lm_robust(X_a ~ Z, data = dat)
+  expect_equal(res$covariate_tests$df1[1], as.integer(fit$k - 1L))
+})
+
+test_that("an aliased term is charged no degree of freedom", {
+  set.seed(93)
+  n <- 200
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
+  dat$X_dup <- dat$X_a                       # exactly collinear
+  fit <- estimatr::lm_robust(Z ~ X_a + X_dup, data = dat)
+  expect_lt(model_df1(fit), fit$k - 1L)
+  expect_equal(model_df1(fit), 1L)
+})
+
+# --- Joint test guard against a failed matrix inversion -----------------------
+
+test_that("the joint test is suppressed when Wald and classical p-values diverge", {
+  # The numerical pathology this guards against is not reliably reproducible from
+  # simulated data; it was found on four real study datasets and is verified
+  # against them. What is testable here is the guard mechanism: forcing the
+  # threshold to zero makes any ordinary gap between the two forms trip it.
+  set.seed(94)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n))
+
+  expect_warning(
+    res <- check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
+    "joint test suppressed"
+  )
+  expect_true(is.na(res$joint_test$p_value))
+  expect_false(res$joint_test$estimable)
+  # the covariate-by-covariate tests are unaffected by the joint-test guard
+  expect_equal(nrow(res$covariate_tests), 3)
+  expect_true(all(!is.na(res$covariate_tests$p_value)))
+})
+
+test_that("the suppression warning names both p-values and the conditioning", {
+  set.seed(941)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+
+  expect_warning(
+    check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
+    "classical F p-value"
+  )
+  expect_warning(
+    check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
+    "condition number"
+  )
+})
+
+test_that("a well-conditioned joint test is left alone", {
+  set.seed(95)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n))
+
+  expect_silent(res <- check_balance(dat, Z))
+  expect_false(is.na(res$joint_test$p_value))
+  expect_true(res$joint_test$estimable)
+})
+
+test_that("max_orders_apart = Inf disables the guard", {
+  set.seed(96)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+
+  expect_silent(
+    res <- check_balance(dat, Z, max_orders_apart = Inf, quiet = TRUE)
+  )
+  expect_false(is.na(res$joint_test$p_value))
+})
+
+test_that("classical_f_pvalue agrees with lm's own F test", {
+  set.seed(97)
+  n <- 300
+  dat <- data.frame(.Zn = rbinom(n, 1, 0.5), X_a = rnorm(n), X_b = rnorm(n))
+  dat$.Zn <- as.numeric(0.3 * dat$X_a > rnorm(n))
+
+  fl <- stats::lm(.Zn ~ X_a + X_b, data = dat)
+  expect_equal(classical_f_pvalue(fl, dat$.Zn), unname(broom::glance(fl)$p.value),
+               tolerance = 1e-10)
+
+  # lm_robust shares OLS point estimates, so the classical F built from its
+  # fitted values matches lm's exactly
+  fr <- estimatr::lm_robust(.Zn ~ X_a + X_b, data = dat)
+  expect_equal(classical_f_pvalue(fr, dat$.Zn), unname(broom::glance(fl)$p.value),
+               tolerance = 1e-10)
+})
+
+test_that("classical_f_pvalue aligns on the rows a fit actually used", {
+  set.seed(98)
+  n <- 200
+  dat <- data.frame(.Zn = rbinom(n, 1, 0.5), X_a = rnorm(n), X_b = rnorm(n))
+  dat$X_a[1:20] <- NA                       # the fit drops 20 rows
+
+  fl <- stats::lm(.Zn ~ X_a + X_b, data = dat)
+  expect_equal(classical_f_pvalue(fl, dat$.Zn), unname(broom::glance(fl)$p.value),
+               tolerance = 1e-10)
+})
