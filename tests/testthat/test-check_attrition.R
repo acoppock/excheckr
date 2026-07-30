@@ -458,3 +458,71 @@ test_that("the simple test survives an outcome the interacted test cannot fit", 
   expect_true(res$simple$estimable)            # covariate-free test still fine
   expect_false(is.na(res$simple$p_value))
 })
+
+# --- status distinguishes a pass from a missing test --------------------------
+
+test_that("status separates no_attrition from the uninformative cases", {
+  set.seed(91)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  dat$Y_clean <- rnorm(n)                       # nobody missing: a pass
+  dat$Y_all <- NA_real_                         # everybody missing: uninformative
+  dat$Y_some <- rnorm(n); dat$Y_some[1:60] <- NA
+
+  res <- check_attrition(dat, Z, outcomes = c("Y_clean", "Y_all", "Y_some"))
+
+  expect_equal(res$status, c("no_attrition", "all_missing", "tested"))
+  expect_equal(res$estimable, res$status == "tested")
+  expect_equal(res$n_missing, c(0L, n, 60L))
+})
+
+test_that("n_missing lets both rates be computed without the raw data", {
+  set.seed(92)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  dat$Y_clean <- rnorm(n)
+  dat$Y_some <- rnorm(n); dat$Y_some[1:60] <- NA
+
+  res <- check_attrition(dat, Z)
+
+  # corpus-health denominator: everything except the uninformative rows
+  informative <- res[res$status %in% c("tested", "no_attrition"), ]
+  expect_equal(nrow(informative), 2)
+
+  # uniformity denominator: tested rows only
+  expect_equal(sum(res$status == "tested"), 1)
+})
+
+test_that("a no-attrition row is a pass, not a gap, in the corpus-health rate", {
+  set.seed(93)
+  n <- 200
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  for (j in 1:9) dat[[paste0("Y_clean", j)]] <- rnorm(n)
+  dat$Y_bad <- rnorm(n)
+  dat$Y_bad[rbinom(n, 1, 0.05 + 0.4 * dat$Z) == 1] <- NA
+
+  res <- check_attrition(dat, Z)
+  flagged <- sum(res$p_value <= 0.05, na.rm = TRUE)
+
+  expect_equal(flagged, 1)
+  # counting the nine clean outcomes as passes gives 1/10, not 1/1
+  informative <- sum(res$status %in% c("tested", "no_attrition"))
+  expect_equal(informative, 10)
+  expect_equal(flagged / informative, 0.1)
+  expect_equal(flagged / sum(res$status == "tested"), 1)
+})
+
+test_that("the Lin path's f_test also carries status", {
+  set.seed(94)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n))
+  dat$Y_clean <- rnorm(n)
+  dat$Y_some <- rnorm(n); dat$Y_some[1:60] <- NA
+
+  res <- check_attrition(dat, Z, covariates = "X_age")
+
+  expect_true("status" %in% names(res$f_test))
+  expect_equal(res$f_test$status[res$f_test$outcome == "Y_clean"], "no_attrition")
+  expect_equal(res$f_test$status[res$f_test$outcome == "Y_some"], "tested")
+  expect_equal(res$f_test$estimable, res$f_test$status == "tested")
+})

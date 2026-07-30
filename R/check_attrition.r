@@ -72,20 +72,50 @@
 #' supplied, so projects that wanted both called the function twice. Both now come
 #' back from one call, and the second fit is no longer wasted.
 #'
-#' @section When there is no test to run:
-#' \code{estimable} says whether a test was actually computed, and holds the
-#' invariant \code{estimable == !is.na(p_value)}. It is \code{FALSE} in three
-#' situations: the missingness indicator does not vary, because nobody dropped out
-#' or everybody did; the Wald test is defeated by rank deficiency; or the model
-#' fits but the robust covariance matrix is degenerate, which happens at very low
-#' missingness and yields no statistic.
+#' @section When there is no p-value, and what that means:
+#' \code{status} records why a row has no p-value, because the reasons mean opposite
+#' things and collapsing them distorts any rate computed from the result. It takes
+#' four values, and \code{estimable} is simply \code{status == "tested"}:
+#' \describe{
+#'   \item{\code{"tested"}}{A p-value was computed. Only these belong in a
+#'     uniform-reference diagnostic.}
+#'   \item{\code{"no_attrition"}}{Nobody was missing this outcome. \strong{This is a
+#'     pass, not a missing test}: with no attrition there can be no differential
+#'     attrition, so the design question is answered in the affirmative.}
+#'   \item{\code{"all_missing"}}{Everybody was missing it, so nothing can be
+#'     learned. Uninformative, and usually a sign the outcome was not asked of this
+#'     subgroup.}
+#'   \item{\code{"not_estimable"}}{The indicator varies but no statistic came back,
+#'     from rank deficiency or a degenerate robust covariance matrix at very low
+#'     missingness. Uninformative.}
+#' }
 #'
-#' None of those is a test result. Earlier versions reported the first as
-#' \code{p_value = 1}, which mattered because a corpus contains many outcomes with
-#' no attrition at all: in one real collection, 849 of 1320 rows. A pile of ones at
-#' the top of the distribution makes \code{\link{summarize_check_pvalues}} report a
-#' badly non-uniform collection when nothing whatsoever is wrong, and it moves
-#' \code{pct_below} in the reassuring direction while it does so.
+#' @section Two different rates, and which one you want:
+#' Because \code{"no_attrition"} is a pass rather than a gap, there are two defensible
+#' rates and they answer different questions. On one real corpus of 1320 study-arm
+#' rows, 31 flagged at \code{alpha = 0.05}, 849 had no attrition, 51 were
+#' uninformative, and 389 were tested and passed:
+#' \itemize{
+#'   \item \strong{How much differential attrition is in this corpus?} Count the
+#'     no-attrition rows as passes: \code{31 / 1269 = 2.4\%}. Exclude only the
+#'     genuinely uninformative rows. This is the number for a sentence about how much
+#'     attrition trouble a corpus has.
+#'   \item \strong{Are the computed p-values uniform, as a valid design implies?}
+#'     Use only tested rows: \code{31 / 420 = 7.4\%}. A row with no attrition
+#'     produces no draw from Uniform(0, 1), so it cannot enter this comparison at
+#'     all.
+#' }
+#' Quoting the second while describing the first overstates the failure rate roughly
+#' threefold, since it silently narrows the denominator from every row where the
+#' question applies to only those rows with some attrition. Quoting the first while
+#' testing uniformity is the mirror error, and is what reporting
+#' \code{p_value = 1} for the no-attrition rows used to produce: it put a spike of
+#' 849 ones at the top of the distribution, which made
+#' \code{\link{summarize_check_pvalues}} report a badly non-uniform collection when
+#' nothing was wrong, while moving \code{pct_below} in the reassuring direction.
+#'
+#' \code{n_missing} is returned so either rate can be computed without going back to
+#' the data.
 #'
 #' @section Clustered designs:
 #' Passing \code{clusters} and \code{se_type = "CR2"} is enough for the
@@ -274,7 +304,9 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
         )
         results_ftest[[v]] <- tibble::tibble(
           outcome = v, F_stat = NA_real_, df1 = NA_integer_, df2 = NA_integer_,
-          p_value = NA_real_, estimable = FALSE
+          p_value = NA_real_,
+          status = if (sum(miss_vals == 1, na.rm = TRUE) == 0L) "no_attrition" else "all_missing",
+          estimable = FALSE
         )
         next
       }
@@ -322,6 +354,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
           df1 = as.integer(q),
           df2 = as.integer(df2),
           p_value = NA_real_,
+          status = "not_estimable",
           estimable = FALSE
         )
       } else {
@@ -333,6 +366,7 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
           df1 = as.integer(q),
           df2 = as.integer(df2),
           p_value = p_value,
+          status = if (is.na(p_value)) "not_estimable" else "tested",
           estimable = !is.na(p_value)
         )
       }
@@ -415,14 +449,23 @@ simple_attrition_tests <- function(data, varnames, treatment_name, .method, ...)
     # unestimable rather than inventing p = 1, which would otherwise pile up as a
     # spike at 1 in the uniform-reference diagnostics downstream.
     miss_vals <- data[[miss_col]]
+    n_obs <- sum(!is.na(miss_vals))
+    n_miss <- sum(miss_vals == 1, na.rm = TRUE)
+
     if (!has_variation(miss_vals)) {
+      # Distinguish the two ways an indicator can fail to vary, because they mean
+      # opposite things. Nobody missing is a pass: with no attrition there can be
+      # no differential attrition, and lumping it in with genuine failures inflates
+      # any rate computed over "tests that ran". Everybody missing is uninformative.
       return(tibble::tibble(
         outcome   = v,
         F_stat    = NA_real_,
         df1       = NA_integer_,
         df2       = NA_integer_,
         p_value   = NA_real_,
-        nobs      = as.integer(sum(!is.na(miss_vals))),
+        nobs      = as.integer(n_obs),
+        n_missing = as.integer(n_miss),
+        status    = if (n_miss == 0L) "no_attrition" else "all_missing",
         estimable = FALSE
       ))
     }
@@ -438,9 +481,11 @@ simple_attrition_tests <- function(data, varnames, treatment_name, .method, ...)
       df2       = as.integer(gl$df.residual),
       p_value   = gl$p.value,
       nobs      = as.integer(gl$nobs),
-      # The model can fit and still yield no statistic, when the robust
-      # covariance matrix is degenerate at very low missingness. Key estimable off
-      # the p-value rather than off reaching this line.
+      n_missing = as.integer(n_miss),
+      # The model can fit and still yield no statistic, when the robust covariance
+      # matrix is degenerate at very low missingness. Key both columns off the
+      # p-value rather than off reaching this line.
+      status    = if (is.na(gl$p.value)) "not_estimable" else "tested",
       estimable = !is.na(gl$p.value)
     )
   })
