@@ -30,14 +30,13 @@
 #' @param quiet Logical. The default \code{TRUE} returns the result, which
 #'   auto-prints at the console. \code{FALSE} prints a labelled report instead
 #'   and returns the same object invisibly, so nothing is printed twice.
-#' @param max_orders_apart How far the joint Wald p-value may fall below the
-#'   classical F p-value on the same fit, in orders of magnitude, before the joint
-#'   test is suppressed with a warning instead of reported (default \code{6}). The
-#'   two forms test the same hypothesis and differ only in that the Wald form
-#'   inverts the coefficient covariance matrix, so a large gap indicates a failed
-#'   inversion rather than real imbalance. See the section below. Only the binary,
-#'   no-\code{declaration} path uses this; the randomization-inference path inverts
-#'   nothing and needs no such guard.
+#' @param min_obs_per_vparam Warn when the joint test has fewer than this many
+#'   observations per variance parameter (default \code{10}). A robust Wald test
+#'   estimates \eqn{q(q+1)/2} covariance entries and then inverts them, so this
+#'   ratio, not the coefficient count, is what governs whether its p-value can be
+#'   trusted. The warning says to narrow the covariate battery; nothing is altered,
+#'   because which covariates to test is your decision. Only the binary,
+#'   no-\code{declaration} path uses this.
 #' @param .by Optional tidyselect expression naming columns to run the check
 #'   separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
 #'   within strata makes a whole-sample check answer the wrong question, so this
@@ -122,31 +121,13 @@
 #' is worth doing for a second, independent reason.
 #'
 #' @section When the joint test cannot be trusted:
-#' The joint test is a Wald test, so it inverts the covariance matrix of the
-#' coefficients rather than reading its diagonal. When that matrix is
-#' near-singular, its inverse is dominated by numerical noise and the statistic can
-#' come out arbitrarily large while every marginal standard error still looks
-#' reasonable. The result is a p-value that is not merely anti-conservative but
-#' impossible.
+#' The joint test is a Wald test on a robust covariance matrix, and in real corpora
+#' that combination has produced p-values that are not merely anti-conservative but
+#' impossible: \code{5.8e-108} and \code{1.5e-248} while no covariate-by-covariate
+#' p-value fell below 0.09, and \code{3.6e-12} against a classical 0.07.
 #'
-#' Real instances, all found in working meta-analysis corpora:
-#' \itemize{
-#'   \item 1578 respondents, 37 covariates, 1511 household clusters: joint
-#'     \code{p = 5.8e-108} while no covariate-by-covariate p-value fell below 0.09.
-#'   \item 2937 respondents, 40 covariates, no clustering: joint
-#'     \code{p = 1.5e-248} against a classical \code{p = 0.23}.
-#'   \item 134 respondents, 5 covariates, no clustering: joint \code{p = 3.6e-12}
-#'     against a classical \code{p = 0.07}.
-#' }
-#' In the first case the marginal robust standard errors were within one percent of
-#' the classical ones, so nothing on the diagonal gave the problem away. The
-#' reciprocal condition number of the covariance matrix was \code{1.1e-07} against
-#' 0.24 to 0.86 in well-behaved fits, and the classical F on the same fit was 0.94
-#' with \code{p = 0.58}.
-#'
-#' @section Why it happens, and what to do about the covariate set:
 #' The cause is the \emph{robust} variance estimator, not collinearity. On the third
-#' case above, the same fit gives:
+#' case, the same fit gives:
 #' \tabular{lrr}{
 #'   \strong{statistic} \tab \strong{value} \tab \strong{p} \cr
 #'   Wald with robust (HC2) V \tab 15.92 \tab 3.6e-12 \cr
@@ -162,8 +143,7 @@
 #' which is \eqn{q(q+1)/2} free parameters estimated from squared residuals and
 #' leverage, and then inverted. Inverting a noisy estimate is not the same as
 #' estimating the inverse, and the error does not average out: it inflates the
-#' statistic. Counting observations per variance parameter puts every pathological
-#' case in the same place:
+#' statistic. Observations per variance parameter puts every case in one place:
 #' \tabular{lrrr}{
 #'   \strong{case} \tab \strong{n} \tab \strong{q} \tab \strong{n / (q(q+1)/2)} \cr
 #'   1578 respondents, 40 covariates \tab 1578 \tab 40 \tab 1.9 \cr
@@ -171,40 +151,29 @@
 #'   134 respondents, 5 covariates \tab 134 \tab 5 \tab 8.9
 #' }
 #'
-#' Two consequences follow, and the second is the practical one.
+#' \strong{This is a fact about the covariate set, so it is reported rather than
+#' patched.} \code{check_balance} warns when the ratio falls below
+#' \code{min_obs_per_vparam}, and returns the inversion-free classical F alongside as
+#' \code{p_value_classical} so a large gap between the two is visible in the result
+#' and survives into a stacked corpus. The p-value you asked for is still reported:
+#' narrowing the battery changes the hypothesis being tested, which is your decision
+#' and not something a check should make silently.
 #'
-#' First, the reciprocal condition number is the wrong diagnostic, which is why the
-#' guard does not use one. \eqn{b'V^{-1}b} is invariant to rescaling a covariate
-#' while \code{rcond(V)} is not: multiplying an age covariate by 100 leaves the
-#' statistic at 15.92 and moves the condition number from \code{1.4e-05} to
-#' \code{2.5e-03}. A condition number partly measures the spread of covariate
-#' scales. Simulated designs with condition numbers as bad as \code{4e-06} return
-#' perfectly sane p-values.
+#' What to do, in order: narrow the battery to the covariates you would actually
+#' adjust for rather than everything the study recorded; resolve redundant
+#' parameterizations of one measurement, such as a continuous age beside binned age,
+#' which the aliasing warning above names for you; and for a wide battery pass
+#' \code{declaration}, since randomization inference compares a statistic to its
+#' permutation distribution and estimates no variance matrix at all. The same
+#' \eqn{n} relative to parameter count governs the calibration results below, so a
+#' narrower battery buys accuracy twice.
 #'
-#' Second, **this is a reason to pass fewer covariates rather than to patch the
-#' test.** The joint test's battery should be the covariates you would actually
-#' adjust for, each measured once, not everything the study recorded. A battery of 40
-#' asks for 820 variance parameters. Concretely: resolve exact redundancies, which
-#' \code{check_balance} now warns about by name; drop one of any pair of
-#' parameterizations of the same measurement, such as a continuous age beside binned
-#' age; and prefer \code{declaration} for a wide battery, since randomization
-#' inference compares a statistic to its permutation distribution and estimates no
-#' variance matrix at all. The same \eqn{n} relative to parameter count governs the
-#' calibration results in the section below, so a smaller battery buys accuracy in
-#' two ways at once.
-#'
-#' When the Wald p-value falls more than \code{max_orders_apart} orders of magnitude
-#' below the classical one, the joint test reports \code{NA} with
-#' \code{estimable = FALSE} and warns, naming both p-values and the condition
-#' number. The default of 6 orders is far outside anything heteroskedasticity or
-#' clustering produces legitimately, and it deliberately leaves alone the separate
-#' case of a fit with genuinely few clusters, where the two p-values disagree by a
-#' factor rather than by orders of magnitude and the remedy is
-#' \code{declaration} rather than a smaller covariate set.
-#'
-#' Remedies, in order: look for redundant parameterizations and drop one; reduce the
-#' covariate set; or pass \code{declaration}, since randomization inference compares
-#' a statistic to its permutation distribution and inverts no matrix.
+#' A note on what \emph{not} to use as a diagnostic. The reciprocal condition number
+#' of the covariance matrix is scale-dependent and the Wald statistic is not:
+#' multiplying an age covariate by 100 leaves the statistic at 15.92 and moves the
+#' condition number from \code{1.4e-05} to \code{2.5e-03}. A condition number partly
+#' measures the spread of covariate scales, and simulated designs with condition
+#' numbers as bad as \code{4e-06} return perfectly sane p-values.
 #'
 #' @section How many observations per coefficient:
 #' Calibration is governed by \eqn{N/q}, where \eqn{q} is the number of
@@ -284,7 +253,7 @@
 #' @export
 check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust,
                           declaration = NULL, sims = 1000, study_id = NULL,
-                          flatten = FALSE, quiet = TRUE, max_orders_apart = 6,
+                          flatten = FALSE, quiet = TRUE, min_obs_per_vparam = 10,
                           .by = NULL, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
@@ -324,7 +293,7 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
       check_balance(d, !!treatment_name, covariates = varnames, .method = .method,
                     declaration = declaration, sims = sims, study_id = study_id,
                     flatten = flatten, quiet = TRUE,
-                    max_orders_apart = max_orders_apart, ...)
+                    min_obs_per_vparam = min_obs_per_vparam, ...)
     })
     if (!quiet) {
       print(result)
@@ -474,54 +443,25 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     fit_joint <- .method(joint_formula, data = analysis_data, ...)
     gl <- broom::glance(fit_joint)
 
-    # The joint test is a Wald test, so it inverts the whole covariance matrix
-    # rather than reading its diagonal, and a near-singular matrix makes the
-    # statistic meaningless rather than merely noisy. Cross-check against the
-    # classical F on the same fit, which is inversion-free: the two answer the same
-    # question and cannot legitimately differ by many orders of magnitude, so a
-    # large gap means the inversion failed rather than that imbalance is real. See
-    # the "When the joint test cannot be trusted" section.
-    p_classical <- classical_f_pvalue(fit_joint, analysis_data[[".Z_numeric"]])
-    orders_apart <- if (is.na(gl$p.value) || is.na(p_classical)) {
-      NA_real_
-    } else {
-      log10(max(p_classical, .Machine$double.xmin)) -
-        log10(max(gl$p.value, .Machine$double.xmin))
-    }
-    if (!is.na(orders_apart) && orders_apart > max_orders_apart) {
-      warning("check_balance: joint test suppressed. Its Wald p-value (",
-              format(gl$p.value, digits = 3), ") is ", round(orders_apart),
-              " orders of magnitude smaller than the classical F p-value on the ",
-              "same fit (", format(p_classical, digits = 3), "), which is more ",
-              "than max_orders_apart = ", max_orders_apart, ". The Wald form ",
-              "inverts the coefficient covariance matrix and the classical form ",
-              "does not, so a gap this large means the inversion is dominated by ",
-              "numerical noise (reciprocal condition number ",
-              format(covariance_rcond(fit_joint), digits = 3),
-              "), not that the covariates predict treatment. Usually ",
-              "near-collinearity in a wide covariate battery: reduce the covariate ",
-              "set, or pass declaration = for a randomization-inference p-value, ",
-              "which inverts nothing.")
-      joint_test <- tibble::tibble(
-        F_stat = NA_real_,
-        statistic = "F",
-        df1 = model_df1(fit_joint),
-        df2 = as.integer(gl$df.residual),
-        p_value = NA_real_,
-        nobs = as.integer(gl$nobs),
-        estimable = FALSE
-      )
-    } else {
-      joint_test <- tibble::tibble(
-        F_stat = gl$statistic,
-        statistic = "F",
-        df1 = model_df1(fit_joint),
-        df2 = as.integer(gl$df.residual),
-        p_value = gl$p.value,
-        nobs = as.integer(gl$nobs),
-        estimable = !is.na(gl$p.value)
-      )
-    }
+    # A robust Wald test estimates q(q+1)/2 variance parameters and then inverts
+    # them, so it needs a covariate battery narrow enough for the data to support
+    # that. Warn when it does not, before anything is read, and report the
+    # inversion-free classical F alongside so the discrepancy is visible in the
+    # result rather than decided here. Nothing is suppressed: which covariates to
+    # test is the caller's decision, and a p-value computed on their stated set is
+    # what they asked for.
+    warn_wide_battery(fit_joint, gl, min_obs_per_vparam, "check_balance")
+
+    joint_test <- tibble::tibble(
+      F_stat = gl$statistic,
+      statistic = "F",
+      df1 = model_df1(fit_joint),
+      df2 = as.integer(gl$df.residual),
+      p_value = gl$p.value,
+      p_value_classical = classical_f_pvalue(fit_joint, analysis_data[[".Z_numeric"]]),
+      nobs = as.integer(gl$nobs),
+      estimable = !is.na(gl$p.value)
+    )
   } else {
     # Multi-armed treatment: multinomial likelihood-ratio test
     joint_test <- multinomial_lr_joint_test(

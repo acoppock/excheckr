@@ -388,60 +388,67 @@ test_that("an aliased term is charged no degree of freedom", {
 
 # --- Joint test guard against a failed matrix inversion -----------------------
 
-test_that("the joint test is suppressed when Wald and classical p-values diverge", {
-  # The numerical pathology this guards against is not reliably reproducible from
-  # simulated data; it was found on four real study datasets and is verified
-  # against them. What is testable here is the guard mechanism: forcing the
-  # threshold to zero makes any ordinary gap between the two forms trip it.
+test_that("a wide covariate battery warns and says to narrow it", {
   set.seed(94)
-  n <- 400
-  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n))
+  n <- 60
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  for (j in 1:8) dat[[paste0("X_", j)]] <- rnorm(n)   # 8 covariates, 36 variance params
 
-  expect_warning(
-    res <- check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
-    "joint test suppressed"
+  ws <- character(0)
+  withCallingHandlers(
+    res <- check_balance(dat, Z, quiet = TRUE),
+    warning = function(w) { ws <<- c(ws, conditionMessage(w)); invokeRestart("muffleWarning") }
   )
-  expect_true(is.na(res$joint_test$p_value))
-  expect_false(res$joint_test$estimable)
-  # the covariate-by-covariate tests are unaffected by the joint-test guard
-  expect_equal(nrow(res$covariate_tests), 3)
-  expect_true(all(!is.na(res$covariate_tests$p_value)))
-})
+  expect_true(any(grepl("variance parameters", ws)))
+  expect_true(any(grepl("Narrow the battery", ws)))
 
-test_that("the suppression warning names both p-values and the conditioning", {
-  set.seed(941)
-  n <- 300
-  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
-
-  expect_warning(
-    check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
-    "classical F p-value"
-  )
-  expect_warning(
-    check_balance(dat, Z, max_orders_apart = -Inf, quiet = TRUE),
-    "condition number"
-  )
-})
-
-test_that("a well-conditioned joint test is left alone", {
-  set.seed(95)
-  n <- 400
-  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n))
-
-  expect_silent(res <- check_balance(dat, Z))
+  # nothing is suppressed: the caller asked for this test and gets it
   expect_false(is.na(res$joint_test$p_value))
   expect_true(res$joint_test$estimable)
 })
 
-test_that("max_orders_apart = Inf disables the guard", {
-  set.seed(96)
-  n <- 400
+test_that("a comfortable ratio does not warn", {
+  set.seed(941)
+  n <- 600
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+  expect_silent(check_balance(dat, Z, quiet = TRUE))
+})
+
+test_that("min_obs_per_vparam controls the warning and alters nothing", {
+  set.seed(942)
+  n <- 600
   dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
 
-  expect_silent(
-    res <- check_balance(dat, Z, max_orders_apart = Inf, quiet = TRUE)
-  )
-  expect_false(is.na(res$joint_test$p_value))
+  quiet_run <- check_balance(dat, Z, quiet = TRUE)
+  noisy <- suppressWarnings(check_balance(dat, Z, min_obs_per_vparam = 1e6, quiet = TRUE))
+  expect_warning(check_balance(dat, Z, min_obs_per_vparam = 1e6, quiet = TRUE),
+                 "variance parameters")
+  # the warning changes no number
+  expect_equal(quiet_run$joint_test$p_value, noisy$joint_test$p_value)
+})
+
+test_that("p_value_classical is reported alongside, on every joint path", {
+  set.seed(943)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+  binary <- check_balance(dat, Z, quiet = TRUE)
+  expect_true("p_value_classical" %in% names(binary$joint_test))
+  expect_false(is.na(binary$joint_test$p_value_classical))
+
+  # multi-arm uses a likelihood ratio, which inverts nothing, so there is no
+  # counterpart and the column is NA rather than absent
+  dat$Zm <- rep(c("C", "T1", "T2"), length.out = n)
+  multi <- check_balance(dat, Zm, covariates = c("X_a", "X_b"), quiet = TRUE)
+  expect_true("p_value_classical" %in% names(multi$joint_test))
+  expect_true(is.na(multi$joint_test$p_value_classical))
+})
+
+test_that("the two p-values agree when the ratio is comfortable", {
+  set.seed(944)
+  n <- 2000
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n))
+  r <- check_balance(dat, Z, quiet = TRUE)
+  expect_lt(abs(log10(r$joint_test$p_value) - log10(r$joint_test$p_value_classical)), 1)
 })
 
 test_that("classical_f_pvalue agrees with lm's own F test", {

@@ -87,6 +87,58 @@ weighted_sd <- function(x, w, rows) {
 }
 
 
+#' Warn when the covariate battery is too wide for a robust Wald test
+#'
+#' The joint balance test is a Wald test on a robust covariance matrix, so it does
+#' not merely estimate the \eqn{q} coefficients: it estimates all \eqn{q(q+1)/2}
+#' entries of their covariance matrix and then inverts them. Inverting a noisy
+#' estimate is not the same as estimating the inverse, and the error does not average
+#' out, so the statistic inflates. The classical F escapes this because it needs one
+#' variance parameter rather than a matrix.
+#'
+#' Observations per variance parameter is therefore the quantity that governs whether
+#' the test is trustworthy, and it is known before fitting. In the three worst real
+#' cases it was 1.9, 3.6 and 8.9, against p-values of \code{1.5e-248},
+#' \code{5.8e-108} and \code{3.6e-12} while the classical F on the same fits saw
+#' nothing.
+#'
+#' This warns and says what to do. It does not alter the result: which covariates to
+#' test is the caller's decision, and narrowing the battery is a change to the
+#' analysis that belongs in the script.
+#'
+#' @param fit The joint fit.
+#' @param gl \code{broom::glance(fit)}.
+#' @param min_per Warn below this many observations per variance parameter.
+#' @param fn_name Calling function, for the message.
+#' @return \code{TRUE} when the warning fired, invisibly.
+#' @keywords internal
+#' @noRd
+warn_wide_battery <- function(fit, gl, min_per = 10, fn_name = "check_balance") {
+  q <- model_df1(fit)
+  n <- suppressWarnings(as.numeric(gl$nobs))
+  if (is.na(q) || q < 2 || is.na(n) || n <= 0) return(invisible(FALSE))
+  n_vparam <- q * (q + 1) / 2
+  per <- n / n_vparam
+  if (per >= min_per) return(invisible(FALSE))
+
+  warning(fn_name, ": the joint test is estimating ", n_vparam,
+          " variance parameters from ", n, " observations (",
+          format(per, digits = 2), " per parameter, below min_obs_per_vparam = ",
+          min_per, ").\n",
+          "  A robust Wald test inverts the covariance matrix of the ", q,
+          " coefficients, and at this ratio that inverse is unreliable: the ",
+          "statistic inflates and the p-value can come out far too small. The ",
+          "classical F on the same fit is reported as p_value_classical; a large gap ",
+          "between the two is the signature.\n",
+          "  This is about the covariate set, not the test. Narrow the battery to the ",
+          "covariates you would actually adjust for, resolve any redundant ",
+          "parameterizations of the same measurement, or pass declaration = for a ",
+          "randomization-inference p-value, which estimates no variance matrix.",
+          call. = FALSE)
+  invisible(TRUE)
+}
+
+
 #' Warn when covariates are aliased, and say which one to drop
 #'
 #' A covariate that is a linear function of the others carries no separate
@@ -485,6 +537,9 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     df1       = NA_integer_,
     df2       = NA_integer_,
     p_value   = NA_real_,
+    # The likelihood-ratio path inverts no covariance matrix, so it has no
+    # inversion-free counterpart to compare against.
+    p_value_classical = NA_real_,
     nobs      = as.integer(n),
     estimable = FALSE
   )
@@ -535,6 +590,7 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     df1       = as.integer(q),
     df2       = NA_integer_,
     p_value   = p_value,
+    p_value_classical = NA_real_,
     nobs      = as.integer(n),
     estimable = TRUE
   )
@@ -602,6 +658,7 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
     df1       = NA_integer_,
     df2       = NA_integer_,
     p_value   = p_value,
+    p_value_classical = NA_real_,
     nobs      = as.integer(n),
     estimable = TRUE
   )
