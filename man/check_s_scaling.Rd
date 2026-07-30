@@ -19,7 +19,10 @@ check_s_scaling(
 \item{treatment}{Character scalar. Name of the treatment column.}
 
 \item{control_value}{Scalar. Value of \code{treatment} identifying the
-control group (default: \code{0}).}
+control group (default: \code{0}). An error is raised when no row matches,
+rather than returning a table of \code{NA}. All arms other than this one are
+pooled into \code{treatment_sd}, so with three or more arms that column is a
+pooled figure and not one arm's.}
 
 \item{study_id}{Optional character scalar. If provided, a \code{study_id}
 column is appended to the returned tibble.}

@@ -89,3 +89,45 @@ test_that("check_smd warns with no covariates and errors with one arm", {
   expect_warning(check_smd(data.frame(Z = 0:1), Z), "No covariates")
   expect_error(check_smd(data.frame(Z = 1, X_age = 2), Z), "only one arm")
 })
+
+# --- Absent covariates and weights --------------------------------------------
+
+test_that("a covariate not in the data is an error, not a silent drop", {
+  dat <- data.frame(Z = rep(0:1, 50), X_age = rnorm(100))
+  expect_error(check_smd(dat, Z, covariates = c("X_age", "X_typo")),
+               "not found")
+})
+
+test_that("unit weights reproduce the unweighted result", {
+  set.seed(21)
+  dat <- data.frame(Z = rep(0:1, 100), X_age = rnorm(200),
+                    X_party = factor(sample(c("D", "R"), 200, TRUE)))
+  dat$w <- 1
+  expect_equal(
+    check_smd(dat, Z, covariates = c("X_age", "X_party")),
+    check_smd(dat, Z, covariates = c("X_age", "X_party"), weights = "w")
+  )
+})
+
+test_that("weights change the SMD and match a hand computation", {
+  set.seed(22)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n))
+  dat$w <- runif(n, 0.5, 2)
+
+  out <- check_smd(dat, Z, covariates = "X_age", weights = "w")
+
+  ctrl <- dat$Z == 0
+  trt <- dat$Z == 1
+  mu_c <- sum(dat$X_age[ctrl] * dat$w[ctrl]) / sum(dat$w[ctrl])
+  mu_t <- sum(dat$X_age[trt] * dat$w[trt]) / sum(dat$w[trt])
+  sd_c <- sqrt(sum(dat$w[ctrl] * (dat$X_age[ctrl] - mu_c)^2) / (sum(dat$w[ctrl]) - 1))
+
+  expect_equal(out$smd, (mu_t - mu_c) / sd_c)
+  expect_false(isTRUE(all.equal(out$smd, check_smd(dat, Z, covariates = "X_age")$smd)))
+})
+
+test_that("a missing weights column errors", {
+  dat <- data.frame(Z = rep(0:1, 50), X_age = rnorm(100))
+  expect_error(check_smd(dat, Z, weights = "nope"), "weights column")
+})

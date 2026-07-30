@@ -6,8 +6,8 @@ make_y_dat <- function() {
   data.frame(
     Y_support   = c(0, 0.5, 1),
     Y_oppose    = c(0, 1.2, 0.8),   # out of bounds
-    Y_support_s = c(-1, 0, 1),      # standardised — should be excluded by default
-    Y_support_missing = c(0, 1, 0), # missing indicator — should be excluded by default
+    Y_support_s = c(-1, 0, 1),      # standardised: excluded by default
+    Y_support_missing = c(0, 1, 0), # missing indicator: excluded by default
     X_age       = c(25, 30, 35)     # non-Y column
   )
 }
@@ -114,7 +114,7 @@ make_x_dat <- function() {
     X_age         = c(25, NA, 30),
     X_age_nona    = c(25, 27, 30),
     X_income      = c(NA, 50, 60),
-    X_race_missing = c(0, 1, 0),    # _missing indicator — excluded by default
+    X_race_missing = c(0, 1, 0),    # _missing indicator: excluded by default
     Y_outcome     = c(0.1, 0.5, 0.9)
   )
 }
@@ -253,4 +253,21 @@ test_that("check_missingness_nona: warns and returns NULL when nothing selected"
   dat <- data.frame(Y_outcome = 1:3)
   expect_warning(res <- check_missingness_nona(dat), "No base covariate variables found")
   expect_null(res)
+})
+
+# --- All-NA outcomes ----------------------------------------------------------
+
+test_that("an all-NA outcome yields NA rather than a false out-of-bounds flag", {
+  res <- check_y_bounds(data.frame(Y_x = c(NA_real_, NA_real_)))
+
+  expect_true(is.na(res$min))
+  expect_true(is.na(res$max))
+  expect_true(is.na(res$in_bounds))
+  expect_false(isTRUE(is.infinite(res$min)))
+})
+
+test_that("an all-NA outcome is not reported as out of bounds by report_checks", {
+  res <- check_y_bounds(data.frame(Y_x = c(NA_real_, NA_real_)), study_id = "a")
+  report <- report_checks(list(ybounds = res))
+  expect_equal(nrow(report$out_of_bounds), 0)
 })

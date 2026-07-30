@@ -34,7 +34,9 @@ additional exclusions.}
 }
 \value{
 A tibble with columns \code{variable}, \code{min}, \code{max},
-  \code{in_bounds}, and optionally \code{study_id}.
+  \code{in_bounds}, and optionally \code{study_id}. A column with no numeric
+  values at all gets \code{NA} for all three, so that an absent outcome is not
+  reported as an out-of-bounds one.
 }
 \description{
 Summarises the min and max of each outcome variable and flags any that
@@ -57,7 +59,6 @@ check_y_bounds(dat, outcomes = "Y_support")
 \seealso{
 Other per-study checks:
 \code{\link[=check_attrition]{check_attrition()}},
-\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
 \code{\link[=check_balance]{check_balance()}},
 \code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
 \code{\link[=check_missingness_nona]{check_missingness_nona()}},

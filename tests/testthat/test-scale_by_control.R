@@ -116,3 +116,25 @@ test_that("custom prefixes argument works", {
   result <- scale_by_control(dat, treatment = "Z", prefixes = "O_")
   expect_true("O_outcome_s" %in% names(result))
 })
+
+# --- Suffix handling and control arm -----------------------------------------
+
+test_that("_01 is stripped by default and kept when strip_suffix is NULL", {
+  dat <- data.frame(Z = c(0, 0, 0, 1, 1, 1),
+                    Y_pct_01 = c(0.2, 0.4, 0.3, 0.6, 0.8, 0.7))
+
+  expect_true("Y_pct_s" %in% names(scale_by_control(dat, treatment = "Z")))
+  expect_true("Y_pct_01_s" %in%
+                names(scale_by_control(dat, treatment = "Z", strip_suffix = NULL)))
+})
+
+test_that("a name without the suffix is unaffected", {
+  dat <- data.frame(Z = c(0, 0, 0, 1, 1, 1), Y_turnout = c(1, 2, 3, 4, 5, 6))
+  expect_true("Y_turnout_s" %in% names(scale_by_control(dat, treatment = "Z")))
+})
+
+test_that("a control_value matching no row errors rather than producing NA columns", {
+  dat <- data.frame(Z = factor(rep(c("C", "T"), 3)), Y_x = rnorm(6))
+  expect_error(scale_by_control(dat, treatment = "Z"), "no rows have")
+  expect_silent(scale_by_control(dat, treatment = "Z", control_value = "C"))
+})

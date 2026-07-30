@@ -108,3 +108,8 @@ test_that("warns and returns NULL when no _s variables found", {
   expect_warning(result <- check_s_scaling(dat, treatment = "Z"), "_s")
   expect_null(result)
 })
+
+test_that("a control_value matching no row errors rather than returning NA", {
+  dat <- data.frame(Z = factor(rep(c("C", "T"), 3)), Y_x_s = rnorm(6))
+  expect_error(check_s_scaling(dat, treatment = "Z"), "no rows have")
+})

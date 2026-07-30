@@ -12,7 +12,10 @@
 #' @param data A data frame, after \code{scale_by_control()} has been applied.
 #' @param treatment Character scalar. Name of the treatment column.
 #' @param control_value Scalar. Value of \code{treatment} identifying the
-#'   control group (default: \code{0}).
+#'   control group (default: \code{0}). An error is raised when no row matches,
+#'   rather than returning a table of \code{NA}. All arms other than this one are
+#'   pooled into \code{treatment_sd}, so with three or more arms that column is a
+#'   pooled figure and not one arm's.
 #' @param study_id Optional character scalar. If provided, a \code{study_id}
 #'   column is appended to the returned tibble.
 #' @param outcomes Character vector of \code{_s} column names to check, or
@@ -63,6 +66,14 @@ check_s_scaling <- function(data, treatment, control_value = 0,
 
   control_rows   <- data[[treatment]] == control_value
   treatment_rows <- data[[treatment]] != control_value
+
+  # A control_value matching no row makes every returned SD NA, including
+  # control_sd_ok, which is the one thing this function exists to report. Fail
+  # loudly instead: a verification that returns NA has not verified anything.
+  if (!any(control_rows, na.rm = TRUE)) {
+    stop("check_s_scaling: no rows have ", treatment, " == ", control_value,
+         ". Pass control_value to name the control arm.", call. = FALSE)
+  }
 
   result <- tibble::tibble(
     variable     = outcomes,

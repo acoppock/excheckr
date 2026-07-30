@@ -9,7 +9,8 @@ scale_by_control(
   treatment,
   control_value = 0,
   outcomes = NULL,
-  prefixes = c("D_", "Y_")
+  prefixes = c("D_", "Y_"),
+  strip_suffix = "_01"
 )
 }
 \arguments{
@@ -26,15 +27,25 @@ control group (default: \code{0}).}
 \item{prefixes}{Character vector of column-name prefixes used for
 auto-selection when \code{outcomes} is \code{NULL}
 (default: \code{c("D_", "Y_")}).}
+
+\item{strip_suffix}{Suffix removed from a column's name before \code{"_s"} is
+appended, or \code{NULL} to append to the name unchanged. The default
+\code{"_01"} suits a convention where a rescaled-to-unit-interval outcome
+carries that marker, so \code{D_belief_01} becomes \code{D_belief_s} rather
+than \code{D_belief_01_s}: the value is no longer on the unit interval once
+divided by an SD, so keeping the marker would be a lie. Pass \code{NULL} if
+your names carry no such marker.}
 }
 \value{
-The input data frame with additional \code{<outcome>_s} columns
-  appended.
+The input data frame with the standardized columns appended. Each is
+  named for its source with \code{strip_suffix} removed and \code{"_s"} added,
+  so \code{Y_turnout} yields \code{Y_turnout_s} and \code{Y_turnout_01} yields
+  \code{Y_turnout_s}.
 }
 \description{
 For each outcome variable, divides by its standard deviation in the control
 group to produce a standardized version. The standardized variable is added
-to the data frame with a \code{_s} suffix (e.g., \code{D_belief_01_s}).
+to the data frame with a \code{_s} suffix.
 }
 \details{
 Auto-selects columns whose names start with any prefix in \code{prefixes}
@@ -45,7 +56,7 @@ selection.
 The resulting \code{_s} variables are on Glass's delta scale: a one-unit
 difference equals one control-group SD. Using the control-group SD as the
 standardizer is Glass's delta (Glass, 1976), which is preferred when the
-treatment may change the variance of the outcome — dividing by pooled SD
+treatment may change the variance of the outcome. Dividing by the pooled SD
 (Cohen's d) would conflate effect-size estimation with variance changes
 induced by the treatment. The \code{_s} variables are intentionally excluded
 from \code{check_y_bounds()} (which skips \code{"_s"} columns), since
@@ -58,7 +69,12 @@ dat <- data.frame(
   D_belief_01 = c(0.2, 0.4, 0.3, 0.6, 0.8, 0.7),
   Y_attitude_01 = c(0.3, 0.5, 0.4, 0.4, 0.6, 0.5)
 )
-scale_by_control(dat, treatment = "Z")
+
+# _01 is stripped, so the new columns are D_belief_s and Y_attitude_s
+names(scale_by_control(dat, treatment = "Z"))
+
+# Keep the full source name instead
+names(scale_by_control(dat, treatment = "Z", strip_suffix = NULL))
 
 }
 \references{

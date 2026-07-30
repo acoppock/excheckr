@@ -9,6 +9,7 @@ check_smd(
   treatment,
   covariates = NULL,
   reference = NULL,
+  weights = NULL,
   study_id = NULL,
   threshold = 0.1
 )
@@ -30,6 +31,12 @@ computed against a treatment arm instead and every sign flips. The arm
 actually used is reported in the \code{reference} column of the result, so
 check it rather than assume it, and pass \code{reference} explicitly when
 the control arm is not first.}
+
+\item{weights}{Optional character scalar naming a column of survey weights.
+When supplied, the arm means and the reference SD are computed on that
+weighted basis. Supply it whenever the balance tests beside this call are
+weighted, since an unweighted SMD and a weighted p-value describe two
+different samples and reading them together will mislead.}
 
 \item{study_id}{Optional character scalar. If provided, a \code{study_id}
 column holding this value is appended to the result.}
@@ -75,7 +82,6 @@ check_smd(dat, Z)
 \seealso{
 Other per-study checks:
 \code{\link[=check_attrition]{check_attrition()}},
-\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
 \code{\link[=check_balance]{check_balance()}},
 \code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
 \code{\link[=check_missingness_nona]{check_missingness_nona()}},

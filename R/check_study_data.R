@@ -25,7 +25,9 @@
 #'   additional exclusions.
 #'
 #' @return A tibble with columns \code{variable}, \code{min}, \code{max},
-#'   \code{in_bounds}, and optionally \code{study_id}.
+#'   \code{in_bounds}, and optionally \code{study_id}. A column with no numeric
+#'   values at all gets \code{NA} for all three, so that an absent outcome is not
+#'   reported as an out-of-bounds one.
 #'
 #' @examples
 #' dat <- data.frame(Y_support = c(0, 0.5, 1), Y_oppose = c(0, 1.2, 0.8))
@@ -71,12 +73,19 @@ check_y_bounds <- function(data, study_id = NULL, outcomes = NULL,
     return(invisible(NULL))
   }
 
+  # An all-NA (or wholly non-numeric) column has no min or max. Report NA and
+  # in_bounds = NA rather than letting min() return Inf, which would arrive in
+  # the triage report as an out-of-bounds outcome that does not exist.
+  range_or_na <- function(v, f) {
+    vals <- suppressWarnings(as.numeric(as.character(data[[v]])))
+    vals <- vals[!is.na(vals)]
+    if (length(vals) == 0) NA_real_ else f(vals)
+  }
+
   result <- tibble::tibble(
     variable = varnames,
-    min = vapply(varnames, function(v)
-      min(suppressWarnings(as.numeric(as.character(data[[v]]))), na.rm = TRUE), numeric(1)),
-    max = vapply(varnames, function(v)
-      max(suppressWarnings(as.numeric(as.character(data[[v]]))), na.rm = TRUE), numeric(1))
+    min = vapply(varnames, range_or_na, numeric(1), f = min),
+    max = vapply(varnames, range_or_na, numeric(1), f = max)
   ) |>
     dplyr::mutate(in_bounds = min >= 0 & max <= 1)
 

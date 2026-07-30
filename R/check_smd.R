@@ -29,6 +29,11 @@
 #'   actually used is reported in the \code{reference} column of the result, so
 #'   check it rather than assume it, and pass \code{reference} explicitly when
 #'   the control arm is not first.
+#' @param weights Optional character scalar naming a column of survey weights.
+#'   When supplied, the arm means and the reference SD are computed on that
+#'   weighted basis. Supply it whenever the balance tests beside this call are
+#'   weighted, since an unweighted SMD and a weighted p-value describe two
+#'   different samples and reading them together will mislead.
 #' @param study_id Optional character scalar. If provided, a \code{study_id}
 #'   column holding this value is appended to the result.
 #' @param threshold Absolute SMD above which \code{flag} is \code{TRUE}
@@ -57,7 +62,7 @@
 #' @family per-study checks
 #' @export
 check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
-                      study_id = NULL, threshold = 0.1) {
+                      weights = NULL, study_id = NULL, threshold = 0.1) {
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   covariates_quo <- rlang::enquo(covariates)
@@ -75,6 +80,24 @@ check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
   if (length(varnames) == 0) {
     warning("No covariates selected for SMD check.")
     return(invisible(NULL))
+  }
+
+  # Error rather than quietly returning one fewer row. A covariate list that has
+  # drifted from the data is the common cause, and silently reporting SMDs for a
+  # smaller set than the caller asked about misstates the check.
+  absent <- setdiff(varnames, names(data))
+  if (length(absent) > 0) {
+    stop("check_smd: covariate(s) not found in ", deparse(substitute(data)), ": ",
+         paste(absent, collapse = ", "), ".", call. = FALSE)
+  }
+
+  if (is.null(weights)) {
+    w <- rep(1, nrow(data))
+  } else {
+    if (!weights %in% names(data)) {
+      stop("check_smd: weights column '", weights, "' not found.", call. = FALSE)
+    }
+    w <- data[[weights]]
   }
 
   z <- data[[treatment_name]]
@@ -109,12 +132,12 @@ check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
 
     dplyr::bind_rows(lapply(pieces, function(piece) {
       x <- piece$values
-      mean_ref <- mean(x[ref_rows], na.rm = TRUE)
-      sd_ref <- stats::sd(x[ref_rows], na.rm = TRUE)
+      mean_ref <- weighted_mean(x, w, ref_rows)
+      sd_ref <- weighted_sd(x, w, ref_rows)
 
       dplyr::bind_rows(lapply(other_arms, function(a) {
         arm_rows <- !is.na(z) & z == a
-        mean_arm <- mean(x[arm_rows], na.rm = TRUE)
+        mean_arm <- weighted_mean(x, w, arm_rows)
         smd <- if (is.na(sd_ref) || sd_ref == 0) NA_real_ else (mean_arm - mean_ref) / sd_ref
         tibble::tibble(
           covariate      = v,

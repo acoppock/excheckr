@@ -2,7 +2,7 @@
 #'
 #' For each outcome variable, divides by its standard deviation in the control
 #' group to produce a standardized version. The standardized variable is added
-#' to the data frame with a \code{_s} suffix (e.g., \code{D_belief_01_s}).
+#' to the data frame with a \code{_s} suffix.
 #'
 #' Auto-selects columns whose names start with any prefix in \code{prefixes}
 #' (default: \code{c("D_", "Y_")}), excluding columns ending with
@@ -12,7 +12,7 @@
 #' The resulting \code{_s} variables are on Glass's delta scale: a one-unit
 #' difference equals one control-group SD. Using the control-group SD as the
 #' standardizer is Glass's delta (Glass, 1976), which is preferred when the
-#' treatment may change the variance of the outcome — dividing by pooled SD
+#' treatment may change the variance of the outcome. Dividing by the pooled SD
 #' (Cohen's d) would conflate effect-size estimation with variance changes
 #' induced by the treatment. The \code{_s} variables are intentionally excluded
 #' from \code{check_y_bounds()} (which skips \code{"_s"} columns), since
@@ -33,9 +33,18 @@
 #' @param prefixes Character vector of column-name prefixes used for
 #'   auto-selection when \code{outcomes} is \code{NULL}
 #'   (default: \code{c("D_", "Y_")}).
+#' @param strip_suffix Suffix removed from a column's name before \code{"_s"} is
+#'   appended, or \code{NULL} to append to the name unchanged. The default
+#'   \code{"_01"} suits a convention where a rescaled-to-unit-interval outcome
+#'   carries that marker, so \code{D_belief_01} becomes \code{D_belief_s} rather
+#'   than \code{D_belief_01_s}: the value is no longer on the unit interval once
+#'   divided by an SD, so keeping the marker would be a lie. Pass \code{NULL} if
+#'   your names carry no such marker.
 #'
-#' @return The input data frame with additional \code{<outcome>_s} columns
-#'   appended.
+#' @return The input data frame with the standardized columns appended. Each is
+#'   named for its source with \code{strip_suffix} removed and \code{"_s"} added,
+#'   so \code{Y_turnout} yields \code{Y_turnout_s} and \code{Y_turnout_01} yields
+#'   \code{Y_turnout_s}.
 #'
 #' @examples
 #' dat <- data.frame(
@@ -43,13 +52,19 @@
 #'   D_belief_01 = c(0.2, 0.4, 0.3, 0.6, 0.8, 0.7),
 #'   Y_attitude_01 = c(0.3, 0.5, 0.4, 0.4, 0.6, 0.5)
 #' )
-#' scale_by_control(dat, treatment = "Z")
+#'
+#' # _01 is stripped, so the new columns are D_belief_s and Y_attitude_s
+#' names(scale_by_control(dat, treatment = "Z"))
+#'
+#' # Keep the full source name instead
+#' names(scale_by_control(dat, treatment = "Z", strip_suffix = NULL))
 #'
 #' @importFrom stats sd
 #' @family outcome scaling
 #' @export
 scale_by_control <- function(data, treatment, control_value = 0,
-                              outcomes = NULL, prefixes = c("D_", "Y_")) {
+                              outcomes = NULL, prefixes = c("D_", "Y_"),
+                              strip_suffix = "_01") {
   if (is.null(outcomes)) {
     outcomes <- unlist(lapply(prefixes, function(p) {
       auto_select_vars(data, prefix = p, exclude_suffixes = c("_missing", "_s"))
@@ -57,6 +72,11 @@ scale_by_control <- function(data, treatment, control_value = 0,
   }
 
   control_rows <- data[[treatment]] == control_value
+  if (!any(control_rows, na.rm = TRUE)) {
+    stop("scale_by_control: no rows have ", treatment, " == ", control_value,
+         ". Pass control_value to name the control arm; every '_s' column would ",
+         "otherwise be silently NA.", call. = FALSE)
+  }
 
   for (v in outcomes) {
     ctrl_sd <- stats::sd(data[[v]][control_rows], na.rm = TRUE)
@@ -68,8 +88,8 @@ scale_by_control <- function(data, treatment, control_value = 0,
       ))
       next
     }
-    s_name <- paste0(sub("_01$", "", v), "_s")
-    data[[s_name]] <- data[[v]] / ctrl_sd
+    stem <- if (is.null(strip_suffix)) v else sub(paste0(strip_suffix, "$"), "", v)
+    data[[paste0(stem, "_s")]] <- data[[v]] / ctrl_sd
   }
 
   data
