@@ -87,6 +87,90 @@ weighted_sd <- function(x, w, rows) {
 }
 
 
+#' Warn when covariates are aliased, and say which one to drop
+#'
+#' A covariate that is a linear function of the others carries no separate
+#' information, so the joint test cannot estimate a coefficient for it. Base
+#' \code{lm()} drops the redundant column silently and reports an F on the
+#' remainder, which is how balance p-values have been computed without anyone
+#' noticing a battery was redundant; \code{estimatr::lm_robust} returns \code{NA}
+#' instead, which is louder but kills the test with no explanation.
+#'
+#' This warns and names the covariate to remove. It deliberately does \strong{not}
+#' prune, because which of two redundant covariates to keep is an analysis decision
+#' that belongs in the script where a reader can see it, not inside a check. Where
+#' the redundancy is exact, the partner is identified so the choice is informed.
+#'
+#' @param data A data frame.
+#' @param varnames Character vector of covariate names.
+#' @param fn_name Calling function, for the message.
+#' @return \code{TRUE} when aliasing was found, invisibly.
+#' @keywords internal
+#' @noRd
+warn_aliased_covariates <- function(data, varnames, fn_name = "check_balance") {
+  if (length(varnames) < 2) return(invisible(FALSE))
+  form <- stats::reformulate(paste0("`", varnames, "`"))
+  mm <- tryCatch(
+    stats::model.matrix(form, data = stats::model.frame(form, data, na.action = stats::na.omit)),
+    error = function(e) NULL
+  )
+  if (is.null(mm) || ncol(mm) < 3) return(invisible(FALSE))
+
+  qr_mm <- qr(mm)
+  if (qr_mm$rank == ncol(mm)) return(invisible(FALSE))
+
+  # Map model-matrix columns to source covariates via the `assign` attribute,
+  # which records it exactly; a factor expands to <covariate><level> with no
+  # separator, so any name-prefix test would guess.
+  keep_cols <- colnames(mm)[qr_mm$pivot[seq_len(qr_mm$rank)]]
+  drop_cols <- colnames(mm)[qr_mm$pivot[-seq_len(qr_mm$rank)]]
+  mm_assign <- attr(mm, "assign")
+  mm_terms <- c("(Intercept)", attr(stats::terms(form, data = data), "term.labels"))
+  col_source <- gsub("`", "", mm_terms[mm_assign + 1L], fixed = TRUE)
+  names(col_source) <- colnames(mm)
+
+  aliased <- unique(col_source[drop_cols])
+  aliased <- aliased[aliased %in% varnames]
+  if (length(aliased) == 0) return(invisible(FALSE))
+
+  # Name the partner where the redundancy is exact: regress each dropped column on
+  # the retained ones and report the covariates that determine it.
+  partners <- lapply(drop_cols, function(dc) {
+    others <- setdiff(keep_cols, "(Intercept)")
+    if (length(others) == 0) return(character(0))
+    fit <- tryCatch(stats::lm.fit(cbind(1, mm[, others, drop = FALSE]), mm[, dc]),
+                    error = function(e) NULL)
+    if (is.null(fit)) return(character(0))
+    if (stats::var(fit$residuals) > 1e-16 * max(1, stats::var(mm[, dc]))) return(character(0))
+    b <- fit$coefficients[-1]
+    names(b) <- others
+    unique(col_source[others[!is.na(b) & abs(b) > 1e-8]])
+  })
+  names(partners) <- drop_cols
+
+  lines <- vapply(aliased, function(a) {
+    cols <- drop_cols[col_source[drop_cols] == a]
+    p <- unique(unlist(partners[cols]))
+    p <- setdiff(p, a)
+    if (length(p)) {
+      paste0("    ", a, " is exactly determined by ", paste(p, collapse = " + "))
+    } else {
+      paste0("    ", a, " is a linear combination of the others")
+    }
+  }, character(1))
+
+  keep_vars <- setdiff(varnames, aliased)
+  warning(fn_name, ": the covariate set is rank deficient, so the joint test cannot ",
+          "be estimated (", ncol(mm), " columns, rank ", qr_mm$rank, ").\n",
+          paste(lines, collapse = "\n"), "\n",
+          "  Choose which to keep at the call site rather than letting the test drop one:\n",
+          "       covariates = c(", paste0('"', keep_vars, '"', collapse = ", "), ")\n",
+          "  The covariate-by-covariate tests are unaffected and are all reported.",
+          call. = FALSE)
+  invisible(TRUE)
+}
+
+
 #' Resolve a \code{.by} expression to column names
 #'
 #' Callers need these before recursing, because a variable list resolved on the

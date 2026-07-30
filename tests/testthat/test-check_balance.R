@@ -471,3 +471,104 @@ test_that("classical_f_pvalue aligns on the rows a fit actually used", {
   expect_equal(classical_f_pvalue(fl, dat$.Zn), unname(broom::glance(fl)$p.value),
                tolerance = 1e-10)
 })
+
+# --- Aliased covariates: warn and suggest, never prune -------------------------
+
+test_that("an exactly duplicated covariate warns and names its partner", {
+  set.seed(101)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_female = rbinom(n, 1, 0.5), X_age = rnorm(n))
+  dat$X_woman <- dat$X_female                      # literally the same column
+
+  expect_warning(
+    res <- check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"),
+                         quiet = TRUE),
+    "rank deficient"
+  )
+  expect_warning(
+    check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"), quiet = TRUE),
+    "X_woman is exactly determined by X_female"
+  )
+  # it suggests the set to keep, and does NOT prune
+  expect_warning(
+    check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"), quiet = TRUE),
+    'covariates = c\\("X_female", "X_age"\\)'
+  )
+  # every covariate the caller asked for is still tested individually
+  expect_setequal(unique(res$covariate_tests$covariate),
+                  c("X_female", "X_age", "X_woman"))
+})
+
+test_that("a coarsening of another covariate is identified", {
+  set.seed(102)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  dat$X_party_3 <- factor(sample(c("left", "center", "right"), n, TRUE))
+  dat$X_republican <- as.integer(dat$X_party_3 == "right")   # determined by the factor
+
+  expect_warning(
+    check_balance(dat, Z, covariates = c("X_party_3", "X_republican"), quiet = TRUE),
+    "exactly determined by"
+  )
+})
+
+test_that("the warning is the only signal that a covariate was dropped", {
+  # This is why warning matters more than the earlier framing suggested. lm_robust
+  # does not refuse a rank-deficient design: it drops the aliased column and reports
+  # an F on the remainder, so the caller gets a p-value for a covariate set they did
+  # not specify, with nothing in the returned object to say so.
+  set.seed(103)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
+  dat$X_dup <- dat$X_a
+
+  res <- suppressWarnings(
+    check_balance(dat, Z, covariates = c("X_a", "X_dup"), quiet = TRUE)
+  )
+  reduced <- check_balance(dat, Z, covariates = "X_a", quiet = TRUE)
+
+  # a p-value comes back, and it is the one for the REDUCED set
+  expect_false(is.na(res$joint_test$p_value))
+  expect_equal(res$joint_test$p_value, reduced$joint_test$p_value)
+  expect_equal(res$joint_test$df1, reduced$joint_test$df1)
+
+  # nothing in the result records the drop, hence the warning
+  expect_true(res$joint_test$estimable)
+})
+
+test_that("an unobserved factor level makes the joint test unestimable outright", {
+  set.seed(1031)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
+  # a declared level with no observations yields an all-zero indicator column
+  dat$X_f <- factor(sample(c("a", "b"), n, TRUE), levels = c("a", "b", "unused"))
+
+  res <- suppressWarnings(
+    check_balance(dat, Z, covariates = c("X_a", "X_f"), quiet = TRUE)
+  )
+  expect_true(is.na(res$joint_test$p_value) || res$joint_test$estimable)
+})
+
+test_that("a full-rank covariate set does not warn", {
+  set.seed(104)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n),
+                    X_f = factor(sample(c("x", "y", "z"), n, TRUE)))
+  expect_silent(check_balance(dat, Z, quiet = TRUE))
+})
+
+test_that("check_attrition warns about aliased covariates too", {
+  set.seed(105)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
+  dat$X_dup <- dat$X_a
+  dat$Y_o <- rnorm(n); dat$Y_o[1:60] <- NA
+
+  ws <- character(0)
+  withCallingHandlers(
+    check_attrition(dat, Z, outcomes = "Y_o", covariates = c("X_a", "X_dup")),
+    warning = function(w) { ws <<- c(ws, conditionMessage(w)); invokeRestart("muffleWarning") }
+  )
+  expect_true(any(grepl("rank deficient", ws)))
+  expect_true(any(grepl("X_dup is exactly determined by X_a", ws)))
+})

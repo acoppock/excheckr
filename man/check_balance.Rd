@@ -151,6 +151,33 @@ design to 4.5 percent, and a warning is emitted when \code{clusters} is passed
 without one.
 }
 
+\section{Aliased covariates}{
+ warned about, never dropped for you:
+A covariate that is a linear function of the others carries no separate
+information, and the joint test cannot estimate a coefficient for it. When that
+happens \code{check_balance} warns, names each redundant covariate and the
+covariates that determine it where the relationship is exact, and prints the
+\code{covariates =} line that would fix the call. It does not prune. Choosing
+which of two redundant covariates to keep is an analysis decision that belongs in
+the script where a reader can see it, not inside a check.
+
+The warning is the only signal you get, which is why it exists.
+\code{lm_robust} does not refuse a rank-deficient design: it drops the aliased
+column and reports an F on the remainder, so without the warning the caller
+receives a p-value for a covariate set they did not specify and nothing in the
+returned object records the substitution. (An unobserved factor level is the one
+case that can instead return \code{NA} outright.) That is how balance p-values
+have been computed on redundant batteries without anyone noticing.
+
+The redundancies seen in practice are mundane and worth recognising: the same
+variable under two names, such as a female indicator beside a woman indicator; a
+coarsening beside the thing it coarsens, such as a Republican indicator beside a
+three-category party factor, or a college indicator beside a three-level
+education factor; and a continuous measure beside a binned version of itself.
+Resolving them also shrinks the covariate count, which the section below explains
+is worth doing for a second, independent reason.
+}
+
 \section{When the joint test cannot be trusted}{
 
 The joint test is a Wald test, so it inverts the covariance matrix of the
@@ -174,21 +201,57 @@ the classical ones, so nothing on the diagonal gave the problem away. The
 reciprocal condition number of the covariance matrix was \code{1.1e-07} against
 0.24 to 0.86 in well-behaved fits, and the classical F on the same fit was 0.94
 with \code{p = 0.58}.
+}
 
-Dissecting the third case found a covariance matrix with one eigenvalue five
-orders of magnitude below the rest, which inversion amplifies by the reciprocal.
-The design included a continuous age covariate and a binned version of the same
-variable, so the near-null direction came from carrying two parameterizations of
-one measurement. Redundant encodings of the same variable are worth looking for
-first when this fires, along with pairs such as a female indicator beside a
-woman indicator, or a party indicator beside a three-category party factor.
+\section{Why it happens, and what to do about the covariate set}{
 
-Ill-conditioning on its own is not sufficient to produce the pathology, and
-simulated data with condition numbers as bad as \code{4e-06} yields perfectly
-sane p-values. That is why the guard is the comparison against the classical F
-rather than a threshold on the condition number: the classical F tests the same
-hypothesis on the same fit and differs only in not inverting anything, so it
-detects the failure without needing a theory of when the failure occurs.
+The cause is the \emph{robust} variance estimator, not collinearity. On the third
+case above, the same fit gives:
+\tabular{lrr}{
+  \strong{statistic} \tab \strong{value} \tab \strong{p} \cr
+  Wald with robust (HC2) V \tab 15.92 \tab 3.6e-12 \cr
+  Wald with classical V \tab 2.06 \tab 0.074 \cr
+  Classical F from residual sums of squares \tab 2.06 \tab 0.074
+}
+The coefficients are identical, both being OLS. The Wald \emph{form} is fine: fed
+the classical variance matrix it reproduces the classical F exactly. What differs
+is which variance matrix is inverted.
+
+The classical F needs one variance parameter, \eqn{\sigma^2}, estimated from
+\eqn{n-k} residuals. A robust Wald test needs the whole \eqn{q \times q} matrix,
+which is \eqn{q(q+1)/2} free parameters estimated from squared residuals and
+leverage, and then inverted. Inverting a noisy estimate is not the same as
+estimating the inverse, and the error does not average out: it inflates the
+statistic. Counting observations per variance parameter puts every pathological
+case in the same place:
+\tabular{lrrr}{
+  \strong{case} \tab \strong{n} \tab \strong{q} \tab \strong{n / (q(q+1)/2)} \cr
+  1578 respondents, 40 covariates \tab 1578 \tab 40 \tab 1.9 \cr
+  2937 respondents, 40 covariates \tab 2937 \tab 40 \tab 3.6 \cr
+  134 respondents, 5 covariates \tab 134 \tab 5 \tab 8.9
+}
+
+Two consequences follow, and the second is the practical one.
+
+First, the reciprocal condition number is the wrong diagnostic, which is why the
+guard does not use one. \eqn{b'V^{-1}b} is invariant to rescaling a covariate
+while \code{rcond(V)} is not: multiplying an age covariate by 100 leaves the
+statistic at 15.92 and moves the condition number from \code{1.4e-05} to
+\code{2.5e-03}. A condition number partly measures the spread of covariate
+scales. Simulated designs with condition numbers as bad as \code{4e-06} return
+perfectly sane p-values.
+
+Second, **this is a reason to pass fewer covariates rather than to patch the
+test.** The joint test's battery should be the covariates you would actually
+adjust for, each measured once, not everything the study recorded. A battery of 40
+asks for 820 variance parameters. Concretely: resolve exact redundancies, which
+\code{check_balance} now warns about by name; drop one of any pair of
+parameterizations of the same measurement, such as a continuous age beside binned
+age; and prefer \code{declaration} for a wide battery, since randomization
+inference compares a statistic to its permutation distribution and estimates no
+variance matrix at all. The same \eqn{n} relative to parameter count governs the
+calibration results in the section below, so a smaller battery buys accuracy in
+two ways at once.
 
 When the Wald p-value falls more than \code{max_orders_apart} orders of magnitude
 below the classical one, the joint test reports \code{NA} with

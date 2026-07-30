@@ -274,6 +274,8 @@ check_attrition <- function(data, treatment, outcomes = NULL, covariates = NULL,
               "covariate-free test from the same function is well calibrated.")
     }
 
+    warn_aliased_covariates(data, covar_names, "check_attrition")
+
     # Demean covariates (replicating lm_lin)
     demeaned <- demean_covariates(data, covar_names)
     demeaned_names <- colnames(demeaned)
