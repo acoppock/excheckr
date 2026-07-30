@@ -47,7 +47,9 @@ For multi-armed treatments, the covariate-by-covariate tests are F-tests with `K
 
 ## Calibration under the null
 
-Under the null of random assignment, a well-calibrated test should reject at rate $\alpha$ when tested at level $\alpha$. We check this by simulation, varying the number of treatment arms.
+Under the null of random assignment, a well-calibrated test should reject at rate $\alpha$ when tested at level $\alpha$. We check this by simulation, varying the number of treatment arms and the sample size.
+
+The quantity that governs the joint test is not the number of arms on its own. The multinomial model estimates $q = (K-1)p$ coefficients, where $p$ is the number of model-matrix columns the covariates expand to, and the chi-squared reference distribution for the likelihood-ratio statistic is asymptotic in $N/q$. Two of the three designs below are comfortable on that ratio and one is not.
 
 ```{r balance-handler}
 balance_handler <- function(data) {
@@ -113,6 +115,71 @@ sims_10arm <- simulate_design(design_10arm, sims = 1000) |>
   mutate(K = 10)
 ```
 
+### Eight arms in a small sample
+
+The same eight-arm structure on 150 respondents, with five candidate covariates rather than two. The covariates expand to six model-matrix columns, so the multinomial model estimates $7 \times 6 = 42$ coefficients from 150 observations: a ratio of roughly 3.6 observations per coefficient.
+
+```{r design-thin}
+thin_handler <- function(data) {
+  res <- check_balance(data, Z, covariates = paste0("X_", 1:5), quiet = TRUE)
+  bind_rows(
+    res$covariate_tests |>
+      transmute(
+        term = ifelse(is.na(level), covariate, paste0(covariate, "_", level)),
+        estimate = F_stat,
+        p.value = p_value
+      ),
+    res$joint_test |>
+      transmute(term = "joint", estimate = F_stat, p.value = p_value)
+  )
+}
+
+design_thin <-
+  declare_model(
+    N = 150,
+    X_1 = rnorm(N),
+    X_2 = sample(c("D", "R", "I"), N, replace = TRUE),
+    X_3 = rnorm(N),
+    X_4 = rnorm(N),
+    X_5 = rnorm(N)
+  ) +
+  declare_assignment(
+    Z = complete_ra(N, conditions = paste0("T", 1:8))
+  ) +
+  declare_estimator(
+    handler = label_estimator(thin_handler),
+    label = "balance_test"
+  )
+```
+
+```{r sim-thin, cache = TRUE}
+set.seed(343)
+sims_thin <- simulate_design(design_thin, sims = 1000)
+```
+
+```{r thin-rate}
+sims_thin |>
+  group_by(test = ifelse(term == "joint", "joint", "covariate")) |>
+  summarize(
+    n_estimable = sum(!is.na(p.value)),
+    rejection_rate = mean(p.value <= 0.05, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+The joint test rejects at roughly twice the nominal rate. The likelihood-ratio statistic is biased upward in small samples and dividing it by its degrees of freedom does not remove the bias, so the test rejects too often exactly where a researcher most wants reassurance.
+
+The covariate-by-covariate tests are also above nominal here, which the three-arm and ten-arm designs above did not reveal. That is the same mechanism rather than a second one. With eight arms, each covariate test is an F-test with seven numerator degrees of freedom, not one, and on 150 respondents split across eight arms there are about 19 observations per arm to estimate them from. Per covariate the rates run from 0.065 to 0.113:
+
+```{r thin-rate-by-covariate}
+sims_thin |>
+  filter(term != "joint") |>
+  group_by(term) |>
+  summarize(rejection_rate = mean(p.value <= 0.05, na.rm = TRUE), .groups = "drop")
+```
+
+So the lesson is about degrees of freedom rather than about which test you picked. A covariate-by-covariate test is well calibrated when treatment is binary, because it is then a single-degree-of-freedom test. Add arms and it becomes a multi-degree-of-freedom test subject to the same small-sample problem as the joint test.
+
 ## Results
 
 ```{r rejection-rates}
@@ -131,7 +198,19 @@ rejection_rates <-
 rejection_rates
 ```
 
-All tests (covariate-by-covariate and joint) should be close to the nominal 5% rate in both designs. The multinomial LR joint test is well-calibrated even with many treatment arms.
+The covariate-by-covariate tests sit at the nominal 5% rate in both designs, and so does the joint test. Read that as a statement about these two designs rather than about arms in general: the three-arm design has about 33 observations per estimated coefficient and the ten-arm design about 19, both comfortable. A wider sweep at 2000 simulations per cell shows the ratio, not the arm count, doing the work.
+
+| $N$ | $K$ | columns $p$ | $q = (K-1)p$ | $N/q$ | rejection rate |
+|----:|----:|------------:|-------------:|------:|---------------:|
+| 2000 | 3 | 3 | 6 | 333 | 0.052 |
+| 500 | 3 | 3 | 6 | 83 | 0.053 |
+| 200 | 3 | 3 | 6 | 33 | 0.048 |
+| 500 | 10 | 3 | 27 | 19 | 0.060 |
+| 200 | 10 | 3 | 27 | 7.4 | 0.069 |
+| 100 | 4 | 6 | 18 | 5.6 | 0.082 |
+| 150 | 8 | 6 | 42 | 3.6 | 0.095 |
+
+Rejection is monotone in $N/q$ and $K$ enters only through $q$. Above roughly 30 observations per coefficient the test is at nominal; below about 10 it is anti-conservative enough to mislead. Adding arms hurts because it multiplies $q$, and so does adding covariates; a ten-arm trial with a large sample is fine and a four-arm trial with five covariates on 100 respondents is not.
 
 ```{r pvalue-hist, fig.height = 6}
 sims_plot <- sims |> mutate(K = paste0(K, " arms"))
@@ -155,7 +234,13 @@ sims_plot |>
 
 ## Randomization inference for clustered designs
 
-When the design involves clustering or other features that make parametric assumptions questionable, you can supply a `declaration` to obtain exact p-values via randomization inference. The RI path uses the same multinomial LR statistic but obtains p-values by permutation under the declared randomization scheme.
+Clustering breaks the parametric joint test, and breaks it worse than a thin sample does. In a 30-cluster design with three individual-level covariates, the joint test rejects at **12.8%** against a nominal 5% even when `clusters` and `se_type = "CR2"` are supplied.
+
+The denominator degrees of freedom are not the problem, so there is nothing to correct. Substituting the number of clusters for the residual degrees of freedom moves the rejection rate from 11.4% to 11.2%, and a chi-squared reference gives 14.5%. The cluster-robust variance estimator is itself biased downward here, because treatment is constant within a cluster: the effective sample size for regressing a cluster-constant treatment on individual-level covariates is the number of clusters, not the number of respondents.
+
+Supplying a `declaration` replaces the parametric reference distribution with the randomization distribution under the declared assignment mechanism, using the same multinomial LR statistic. In the same 30-cluster design that rejects at 12.8% parametrically, randomization inference rejects at **4.5%**.
+
+`check_balance()` warns when `clusters` is passed without a `declaration`, for this reason. The covariate-by-covariate tests are unaffected: they are single-degree-of-freedom tests and are well calibrated with cluster-robust standard errors, at 4.8% to 5.6% in the same design.
 
 ```{r ri-example, eval = requireNamespace("ri2", quietly = TRUE)}
 library(randomizr)

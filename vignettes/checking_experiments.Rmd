@@ -1,8 +1,8 @@
 ---
-title: "Experimental Data Cleaning and Checking Workflow"
+title: "Checking One Experiment"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Experimental Data Cleaning and Checking Workflow}
+  %\VignetteIndexEntry{Checking One Experiment}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -14,130 +14,101 @@ knitr::opts_chunk$set(
   fig.width = 7,
   fig.height = 5
 )
+options(width = 100)
 ```
 
-# Introduction
-
-The `excheckr` package provides tools for cleaning and validating experimental data. This vignette demonstrates a complete workflow for a randomized experiment, showing how to:
-
-1. Inspect and visualize covariate missingness
-2. Generate and apply imputation code
-3. Create outcome missingness indicators
-4. Check for balance across treatment conditions
-5. Check for differential attrition
-
-## Setup
-
-```{r setup}
+```{r setup, message = FALSE}
 library(excheckr)
 library(dplyr)
 library(tidyr)
-library(estimatr)
 library(randomizr)
-
-set.seed(2024)
 ```
 
-# Simulating Experimental Data
+A cleaned experimental dataset invites four questions. Are the outcomes on the
+scale you think they are on? Which covariates have missing values, and what did
+you do about them? Did randomization balance the covariates? Did treatment affect
+who is missing an outcome? This vignette answers all four on a simulated study
+built with known problems, so that the checks have something to find.
 
-Let's create a realistic experimental dataset with:
-- Treatment assignment (`Z`)
-- Covariates with some missingness (`X_*`)
-- Outcomes with differential missingness (`Y_*`)
+Every check takes a `study_id` and appends it to its output. That is what makes
+the results stackable across studies later, which is the subject of
+`vignette("checking_many_studies")`.
 
-```{r simulate-data}
-n <- 500
+## A study with planted problems
 
-# Cluster-randomized experiment: 25 clusters of 20 units each
-dat <- data.frame(
-  cluster_id = rep(1:25, each = 20)
-)
+Treatment is assigned at the cluster level, which matters later: a clustered
+design changes which balance test is trustworthy. `X_income` and `X_party` carry
+missing values, and `Y_attitude` is missing more often among the treated, so the
+attrition check should flag it and the balance checks should not.
 
-# Treatment assigned at the cluster level using cluster_ra
-dat$Z <- cluster_ra(clusters = dat$cluster_id)
+```{r simulate}
+set.seed(123)
 
-# Covariates (pre-treatment, so they don't depend on Z)
-dat <- dat |>
+n_clusters <- 25
+cluster_size <- 20
+n <- n_clusters * cluster_size
+
+dat <- tibble(
+  cluster_id = rep(seq_len(n_clusters), each = cluster_size),
+  X_age = rnorm(n, 45, 15),
+  X_gender = sample(c("Male", "Female", "Other"), n, replace = TRUE,
+                    prob = c(0.48, 0.48, 0.04)),
+  X_income = exp(rnorm(n, 11, 0.8)) * 1000,
+  X_party = factor(sample(c("Democrat", "Republican", "Independent"), n,
+                          replace = TRUE, prob = c(0.35, 0.30, 0.35))),
+  X_ideology = sample(1:7, n, replace = TRUE)
+) |>
   mutate(
-    # Demographics
-    X_age = rnorm(n, 45, 15),
-    X_gender = sample(c("Male", "Female", "Other"), n, replace = TRUE,
-                      prob = c(0.48, 0.48, 0.04)),
-    X_income = exp(rnorm(n, 11, 0.8)) * 1000,
-
-    # Political variables
-    X_party = factor(sample(c("Democrat", "Republican", "Independent"), n,
-                           replace = TRUE, prob = c(0.35, 0.30, 0.35))),
-    X_ideology = sample(1:7, n, replace = TRUE),
-
-    # Education
-    X_education = factor(sample(c("HS", "Some College", "BA", "Graduate"), n,
-                               replace = TRUE, prob = c(0.25, 0.30, 0.30, 0.15)))
+    Z = cluster_ra(clusters = cluster_id),
+    # Covariates go missing at random, unrelated to treatment
+    X_income = if_else(runif(n) < 0.08, NA_real_, X_income),
+    X_party = if_else(runif(n) < 0.06, NA, X_party),
+    # Y_attitude drops out more often among the treated; Y_behavior does not
+    Y_attitude = if_else(runif(n) < if_else(Z == 1, 0.35, 0.25), NA_real_,
+                         plogis(0.5 * Z + 0.01 * X_age + rnorm(n))),
+    Y_behavior = if_else(runif(n) < 0.20, NA_real_,
+                         plogis(0.2 * Z + rnorm(n, 0, 0.5)))
   )
 
-# Introduce MCAR missingness in covariates
-dat$X_age[sample(1:n, 25)] <- NA
-dat$X_income[sample(1:n, 40)] <- NA
-dat$X_party[sample(1:n, 30)] <- NA
-dat$X_ideology[sample(1:n, 35)] <- NA
-
-# Outcomes built from treatment assignment
-# Y_attitude: treatment effect of 0.5, with differential attrition
-# Y_behavior: treatment effect of 0.2, no differential attrition
-dat <- dat |>
-  mutate(
-    Y_attitude_latent = 3 + 0.5 * Z + 0.01 * X_age + rnorm(n),
-    Y_behavior_latent = 0.3 + 0.2 * Z + rnorm(n, 0, 0.5)
-  )
-
-# Create missingness in outcomes
-# Y_attitude: 25% missing in control, 35% missing in treatment (differential!)
-miss_attitude <- rbinom(n, 1, ifelse(dat$Z == 1, 0.35, 0.25))
-dat$Y_attitude <- ifelse(miss_attitude == 1, NA, dat$Y_attitude_latent)
-
-# Y_behavior: 20% missing in both groups (no differential attrition)
-miss_behavior <- rbinom(n, 1, 0.20)
-dat$Y_behavior <- ifelse(miss_behavior == 1, NA, dat$Y_behavior_latent)
-
-# Remove latent variables
-dat <- dat |> select(-Y_attitude_latent, -Y_behavior_latent)
-
-# View first few rows
-head(dat)
+dat
 ```
 
-# Step 1: Inspect Covariate Missingness
+## Are the outcomes on the expected scale?
 
-Before imputing, inspect the patterns of missingness in the covariates.
+`check_y_bounds()` reports the range of every `Y_` column and flags anything
+outside the unit interval. Both outcomes here are probabilities, so both should
+pass.
 
-```{r check-missingness}
-# Check missingness patterns
-check_covariate_missingness(dat)
+```{r ybounds}
+check_y_bounds(dat, study_id = "demo_study_1")
 ```
 
-The summary shows:
-- `X_income` has the most missingness (8%)
-- `X_ideology` and `X_party` also have notable missingness
-- The heatmap shows joint missingness patterns
+A `FALSE` in `in_bounds` almost always means a cleaning error rather than a
+finding: a percentage left on a 0 to 100 scale, or a reverse-coded item that
+never got recoded. Fix it at the source.
 
-The diagonal shows univariate missingness, while off-diagonal cells show cases missing both variables. High off-diagonal values suggest missingness may not be completely at random.
+## Which covariates are missing, and were they imputed?
 
-# Step 2: Generate and Apply Imputation Code
+`check_covariate_missingness()` prints a summary and returns a joint-missingness
+heatmap. The diagonal is each covariate's own missingness rate; an off-diagonal
+cell is the share of rows missing both, so a cell close to its diagonal
+neighbours means the two go missing together.
 
-Now we'll generate code to impute missing covariates. The `write_*_code()` functions print code that you can review and customize before running.
+```{r missingness}
+missingness <- check_covariate_missingness(dat)
+```
 
-```{r generate-imputation-code}
-# Generate imputation code for all X_ variables
+`write_covariate_imputation_code()` does not impute anything. It prints code for
+you to read and paste, so the imputation lands in your script where a reader can
+see it rather than inside a function call.
+
+```{r generate-imputation}
 write_covariate_imputation_code(dat)
 ```
 
-The generated code:
-- Imputes numeric variables with their median
-- Imputes categorical variables with their mode
-- Creates missingness indicator variables (`_missing`)
-- Creates imputed versions (`_nona`)
-
-Now let's apply this imputation:
+Numeric covariates get the median, categorical ones the mode via `stat_mode()`,
+and each gets a `_missing` indicator alongside the imputed `_nona` version.
+Pasting that output gives:
 
 ```{r apply-imputation}
 dat <-
@@ -152,194 +123,163 @@ dat <-
     X_party_nona = replace_na(X_party, stat_mode(X_party)),
     X_party_missing = if_else(is.na(X_party), 1, 0),
     X_ideology_nona = replace_na(X_ideology, median(X_ideology, na.rm = TRUE)),
-    X_ideology_missing = if_else(is.na(X_ideology), 1, 0),
-    X_education_nona = replace_na(X_education, stat_mode(X_education)),
-    X_education_missing = if_else(is.na(X_education), 1, 0)
-  )
-
-# Verify no missingness in imputed variables
-dat |>
-  summarize(
-    across(ends_with("_nona"), ~sum(is.na(.)))
+    X_ideology_missing = if_else(is.na(X_ideology), 1, 0)
   )
 ```
 
-All imputed variables have zero missing values.
+`check_missingness_nona()` then confirms the imputation took. `has_nona_version`
+says a companion column exists and `nona_has_na` says whether it still contains
+missing values, which it should not.
 
-# Step 3: Create Outcome Missingness Indicators
-
-For outcomes, we typically don't impute. Instead, we create missingness indicators to check for differential attrition.
-
-```{r generate-outcome-missing}
-# Generate code for outcome missingness indicators
-write_outcome_missingness_dummies_code(dat)
+```{r check-nona}
+check_missingness_nona(dat, study_id = "demo_study_1")
 ```
 
-Apply this code:
+## Did randomization balance the covariates?
 
-```{r apply-outcome-missing}
-dat <- 
-  dat |>
-  mutate(
-    Y_attitude_missing = if_else(is.na(Y_attitude), 1, 0),
-    Y_behavior_missing = if_else(is.na(Y_behavior), 1, 0)
-  )
+`check_balance()` runs one test per covariate and one joint test of all of them
+together. It returns a two-element list; `flatten = TRUE` returns a single tibble
+instead, distinguished by a `test` column.
 
-# Check missingness rates by treatment
-dat |>
-  group_by(Z) |>
-  summarize(
-    n = n(),
-    attitude_missing_rate = mean(Y_attitude_missing),
-    behavior_missing_rate = mean(Y_behavior_missing)
-  )
-```
+Because assignment was clustered, `clusters` and `se_type` are passed through to
+the underlying `lm_robust()` call. This raises a warning, and the warning is
+worth reading rather than suppressing.
 
-We can see differential missingness in `Y_attitude` (35% in treatment vs 25% in control) but not in `Y_behavior` (20% in both groups).
-
-# Step 4: Check Balance
-
-Before analyzing treatment effects, we should verify that randomization successfully balanced covariates across treatment conditions.
-
-```{r check-balance}
-# Check balance on imputed covariates
-balance_results <- check_balance(
-  dat, 
-  treatment = Z,
-  covariates = c("X_age_nona", "X_income_nona", "X_ideology_nona", 
-                 "X_gender", "X_party_nona", "X_education"),
+```{r balance, warning = TRUE}
+balance <- check_balance(
+  dat, Z,
+  covariates = c("X_age_nona", "X_income_nona", "X_ideology_nona",
+                 "X_gender", "X_party_nona"),
   clusters = cluster_id,
-  se_type = "CR2"
+  se_type = "CR2",
+  study_id = "demo_study_1"
 )
+
+balance$covariate_tests
 ```
 
-The results show the coefficient from regressing each covariate on treatment. For categorical variables, you'll see multiple rows (one per level, excluding the reference category).
+`F_stat` is the omnibus statistic from regressing the covariate on treatment and
+`p_value` is its p-value. There is no coefficient column: with three or more arms
+there would be no single coefficient to report, so the family reports the omnibus
+test throughout. A factor covariate contributes one row per non-reference level,
+which is why `X_party_nona` appears twice.
 
-Key things to look for:
-- Coefficients close to zero (treatment doesn't predict covariates)
-- Non-significant p-values
-- For categorical variables, check each level
+The joint test is the one the warning was about.
 
-We can also generate code to do this manually:
+```{r balance-joint}
+balance$joint_test
+```
 
-```{r generate-balance-code}
-write_balance_check_code(
-  dat,
-  treatment = Z,
-  covariates = c("X_age_nona", "X_income_nona"),
+Under cluster randomization that p-value is not trustworthy. The parametric joint
+test rejects roughly 13 percent of the time at a nominal 5 percent with 30
+clusters, and no correction to its degrees of freedom repairs it, because the
+cluster-robust variance estimator is itself biased downward when treatment is
+constant within a cluster. Passing a `declaration` replaces the parametric
+reference distribution with the randomization distribution, which is calibrated:
+
+```{r balance-ri, eval = requireNamespace("ri2", quietly = TRUE)}
+declaration <- declare_ra(clusters = dat$cluster_id)
+
+check_balance(
+  dat, Z,
+  covariates = c("X_age_nona", "X_income_nona", "X_ideology_nona",
+                 "X_gender", "X_party_nona"),
+  declaration = declaration,
+  sims = 200,
+  study_id = "demo_study_1"
+)$joint_test
+```
+
+The covariate-by-covariate tests need no such repair here. Treatment is binary, so
+each is a single-degree-of-freedom test, and those are well calibrated with
+cluster-robust standard errors. That is a fact about this design rather than about
+covariate tests in general: with many arms and a small sample they over-reject just
+as the joint test does.
+
+`vignette("balance_testing")` works through the calibration of all of these.
+
+### A p-value is not a magnitude
+
+A significant imbalance in a large sample can be trivially small, and a
+substantial one in a small sample can miss significance. `check_smd()` answers
+the question the p-value cannot, reporting each difference in units of the
+reference arm's standard deviation.
+
+```{r smd}
+check_smd(dat, Z,
+          covariates = c("X_age_nona", "X_income_nona", "X_ideology_nona"),
+          study_id = "demo_study_1") |>
+  select(covariate, arm, reference, smd, flag)
+```
+
+`flag` marks an absolute SMD above 0.1, a conventional threshold. Check the
+`reference` column rather than assuming it: the default is the first level, which
+is a guess based on ordering, and if your control arm is not first then every sign
+is inverted. Pass `reference` explicitly when in doubt. If the balance tests were
+weighted, pass the same `weights` column here too, since an unweighted SMD beside
+a weighted p-value describes a different sample.
+
+## Did treatment affect who is missing an outcome?
+
+`check_attrition()` regresses a missingness indicator on treatment for each
+outcome. `Y_attitude` was built with differential attrition and `Y_behavior` was
+not.
+
+```{r attrition}
+check_attrition(dat, Z, clusters = cluster_id, se_type = "CR2",
+                study_id = "demo_study_1")
+```
+
+`Y_attitude` is flagged and `Y_behavior` is not, which is what the simulation put
+there. This covariate-free test is well calibrated under clustering, so unlike the
+joint balance test it needs no randomization-inference counterpart.
+
+The `estimable` column matters when these results are stacked. An outcome nobody
+skipped supports no test at all, and such a row reports `NA` rather than a p-value
+of 1. A collection of studies contains many such outcomes, and counting them as
+p-values near 1 would make the p-value diagnostics in
+`vignette("checking_many_studies")` report a badly non-uniform distribution when
+nothing is wrong.
+
+Passing `covariates` fits the Lin (2013) interacted model instead, testing
+treatment and all treatment-by-covariate interactions jointly. That asks a more
+demanding question, whether attrition differs by treatment *anywhere* in covariate
+space, and it spends a degree of freedom per covariate per arm to ask it. Read the
+two together rather than replacing one with the other.
+
+### Is covariate missingness itself balanced?
+
+Imputation assumes covariate missingness is unrelated to treatment. Since the
+`_missing` indicators were created above, that assumption is directly testable.
+
+```{r missing-balance, warning = FALSE}
+check_balance(
+  dat, Z,
+  covariates = c("X_income_missing", "X_party_missing"),
   clusters = cluster_id,
-  se_type = "CR2"
-)
+  se_type = "CR2",
+  study_id = "demo_study_1"
+)$covariate_tests
 ```
 
-# Step 5: Check for Differential Attrition
+Balance here supports the imputation. Imbalance would suggest missingness is
+related to treatment, which imputing a median cannot fix.
 
-Differential attrition occurs when treatment affects the probability of outcome missingness. This can bias treatment effect estimates.
+## What to do with the results
 
-```{r check-attrition}
-# Check if treatment predicts outcome missingness
-attrition_results <- check_attrition(
-  dat,
-  treatment = Z,
-  clusters = cluster_id,
-  se_type = "CR2"
-)
-```
+Three of the four checks are about cleaning and one is about the design.
+Out-of-bounds outcomes, covariates missing an imputed companion, and companions
+that still contain `NA` are all errors to fix at the source. Balance and attrition
+results are different: they are evidence to report, not thresholds to act on.
 
-The results show:
-- **Y_attitude_missing**: Significant positive coefficient (~0.10, p < 0.05), indicating differential attrition. Treatment increases missingness by about 10 percentage points.
-- **Y_behavior_missing**: Non-significant coefficient, indicating no differential attrition.
+- **A single flagged balance test** is usually not worth acting on. Under a valid
+  design, roughly `alpha` of these tests reject by construction.
+- **Differential attrition** is worth reporting as a limitation, and worth
+  bounding or weighting if it is large.
+- **Imbalanced missingness indicators** point at missingness that is not at
+  random, where a sensitivity analysis is more honest than an imputation.
 
-We can also generate the code:
-
-```{r generate-attrition-code}
-write_attrition_check_code(
-  dat,
-  treatment = Z,
-  clusters = cluster_id,
-  se_type = "CR2"
-)
-```
-
-# Step 6: Check Missingness Indicator Balance
-
-A more stringent check: are the missingness indicators themselves balanced? This tests whether treatment affects who is missing on covariates.
-
-```{r check-missing-balance}
-# Check if treatment predicts covariate missingness
-missing_balance <- check_balance(
-  dat,
-  treatment = Z,
-  covariates = c("X_age_missing", "X_income_missing", 
-                 "X_party_missing", "X_ideology_missing"),
-  clusters = cluster_id,
-  se_type = "CR2"
-)
-```
-
-Balance on the missingness indicators supports the assumption that covariate missingness is unrelated to treatment assignment and that the imputation approach is valid.
-
-# Complete Workflow Summary
-
-Here's the recommended workflow for experimental data:
-
-## 1. Initial Data Inspection
-```r
-check_covariate_missingness(dat)
-```
-
-## 2. Impute Covariates
-```r
-# Generate code
-write_covariate_imputation_code(dat)
-
-# Review and apply the generated code
-dat <- dat |>
-  mutate(
-    # ... paste generated code here ...
-  )
-```
-
-## 3. Create Outcome Missingness Indicators
-```r
-# Generate code
-write_outcome_missingness_dummies_code(dat)
-
-# Apply code
-dat <- dat |>
-  mutate(
-    # ... paste generated code here ...
-  )
-```
-
-## 4. Validate the Experiment
-```r
-# Check covariate balance
-check_balance(dat, Z)
-
-# Check for differential attrition
-check_attrition(dat, Z)
-
-# Check missingness indicator balance (optional but recommended)
-check_balance(dat, Z, covariates = ends_with("_missing"))
-```
-
-## 5. Address Issues
-- **Imbalanced covariates**: Consider covariate adjustment in your analysis
-- **Differential attrition**: Report as a limitation; consider bounds analysis or weighting
-- **Imbalanced missingness indicators**: May suggest MNAR (missing not at random); consider sensitivity analyses
-
-# Conclusion
-
-The `excheckr` package streamlines the process of cleaning and validating experimental data by:
-
-1. **Generating reproducible code** with `write_*_code()` functions that you can review before applying
-2. **Running diagnostic checks** with `check_*()` functions that produce tidy, publication-ready results
-3. **Following best practices** for handling missingness in experimental data
-
-This workflow helps ensure your experimental analysis is:
-- **Transparent**: All data transformations are explicit
-- **Reproducible**: Generated code can be saved and reused
-- **Valid**: Balance and attrition checks catch potential issues
-
-For more information on individual functions, see their help pages (e.g., `?check_balance`).
+Dropping studies on the strength of a flagged check is how you introduce the bias
+the check was meant to detect. `vignette("checking_many_studies")` makes that case
+with the arithmetic behind it, and shows how to run these checks across a corpus
+and read the result.

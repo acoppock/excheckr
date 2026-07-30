@@ -162,6 +162,18 @@ report$out_of_bounds[, c("study_id", "variable", "min", "max")]
 report$attrition[, c("study_id", "outcome", "p_value")]
 ```
 
+One column in the stacked attrition results is worth knowing about before the next
+section. An outcome that nobody skipped supports no attrition test at all, and
+those rows carry `estimable = FALSE` with an `NA` p-value rather than a p-value of
+1. That distinction matters more than it looks: a real corpus contains many
+outcomes with no attrition, and reporting them as ones would put a spike at the top
+of the p-value distribution and make the diagnostics below announce a badly
+non-uniform collection when nothing at all is wrong.
+
+```{r estimable}
+table(all_checks$attrition$estimable)
+```
+
 ## Reading the p-values honestly
 
 The flagged balance tests deserve more care than the other two categories, and
@@ -184,11 +196,24 @@ summarize_check_pvalues(covariate_tests)
 ```
 
 `pct_below` is the observed rejection rate and `expected_below` is what the
-design implies, so the two should be close. `ks_p` is a Kolmogorov-Smirnov test
-against the uniform, where a small value means the distribution is the wrong
-shape overall. `pct_below_fdr` applies a Benjamini-Hochberg correction, which is
-the right lens when you want to know whether any individual test survives
-multiplicity.
+design implies, so the two should be close. `pct_below_fdr` applies a
+Benjamini-Hochberg correction, which is the right lens when you want to know
+whether any individual test survives multiplicity.
+
+Two columns deserve more suspicion than the rest. `n_dropped` counts tests that
+could not be computed and were excluded. When it is large relative to `n_tests`,
+the summary describes a subsample selected on estimability rather than the corpus,
+and says nothing at all about the studies that fell out. This is not a hypothetical:
+the joint balance test relies on `nnet::multinom`, which fails to converge on small
+strata, and in one real corpus 802 of 1143 joint balance tests were unestimable
+while the summary reported `n_tests = 341` without comment.
+
+`ks_p` tests the whole distribution against the uniform, but it assumes the
+p-values are independent and these are not. Within a study, the indicators of one
+factor covariate are mechanically dependent, correlated covariates add more, and
+the joint test is a function of all of them. Read a small `ks_p` on a stacked
+collection as evidence of dependence first and of a design problem second. The
+`pct_below` against `expected_below` comparison is the more robust headline.
 
 The `group` argument controls what the FDR correction is computed over. Adjusting
 within study asks whether a given study looks broken; adjusting across all tests
