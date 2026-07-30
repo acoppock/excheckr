@@ -87,6 +87,102 @@ weighted_sd <- function(x, w, rows) {
 }
 
 
+#' Resolve a \code{.by} expression to column names
+#'
+#' Callers need these before recursing, because a variable list resolved on the
+#' full data can include a grouping column, while the stratum data has the
+#' grouping columns hidden. Asking for a covariate that is no longer there is an
+#' error, and \code{X_pid_3} used as a stratifier is exactly that case: it matches
+#' the \code{"X_"} prefix and so is auto-selected as a covariate.
+#'
+#' @param data A data frame.
+#' @param by_quo A quosure holding the \code{.by} tidyselect expression.
+#' @return Character vector of column names.
+#' @keywords internal
+#' @noRd
+by_column_names <- function(data, by_quo) {
+  names(tidyselect::eval_select(by_quo, data))
+}
+
+
+#' Run a check separately within each stratum and stack the results
+#'
+#' Backs the \code{.by} argument of the checks that involve treatment. A check run
+#' on a whole dataset when treatment was assigned within strata answers the wrong
+#' question, so every real project has been writing the same
+#' \code{nest} / \code{map} / \code{unnest} plumbing by hand and then bolting
+#' \code{study_id} on afterwards, because the argument cannot survive the
+#' \code{map}. This does that once.
+#'
+#' The return shape is whatever the check itself returns, with the grouping columns
+#' prepended: a tibble stays a tibble, and a named list of tibbles stays a named
+#' list of tibbles bound element-wise. That keeps \code{.by} orthogonal to
+#' \code{flatten} and to the two shapes \code{check_attrition} can return.
+#'
+#' @param data A data frame.
+#' @param by_quo A quosure holding the \code{.by} tidyselect expression.
+#' @param fn A function of one argument, the stratum's data.
+#' @return The stacked result, shaped like a single \code{fn()} call.
+#' @keywords internal
+#' @noRd
+run_by_strata <- function(data, by_quo, fn) {
+  by_cols <- names(tidyselect::eval_select(by_quo, data))
+  if (length(by_cols) == 0) {
+    stop("check .by: no grouping columns selected.", call. = FALSE)
+  }
+
+  keys <- data[, by_cols, drop = FALSE]
+  # Group in order of first appearance, and keep NA as its own stratum rather than
+  # dropping those rows, matching tidyr::nest(.by = ).
+  key_str <- do.call(paste, c(lapply(keys, function(x) as.character(x)), sep = "\r"))
+
+  # Hide the grouping columns from the check, exactly as tidyr::nest(.by = ) does.
+  # They are constant within a stratum, so leaving them visible would let one be
+  # picked up by prefix-based auto-selection and tested as a covariate with no
+  # variation. X_pid_3 as a stratifier is precisely that case.
+  stratum_data <- data[, setdiff(names(data), by_cols), drop = FALSE]
+
+  pieces <- lapply(unique(key_str), function(k) {
+    rows <- which(key_str == k)
+    res <- fn(stratum_data[rows, , drop = FALSE])
+    if (is.null(res)) return(NULL)
+    prepend_stratum_keys(res, keys[rows[1], , drop = FALSE])
+  })
+  pieces <- Filter(Negate(is.null), pieces)
+  if (length(pieces) == 0) return(invisible(NULL))
+
+  if (is.data.frame(pieces[[1]])) return(dplyr::bind_rows(pieces))
+
+  # A named list of tibbles: bind each element across strata.
+  element_names <- unique(unlist(lapply(pieces, names)))
+  out <- lapply(element_names, function(nm) {
+    chunks <- Filter(Negate(is.null), lapply(pieces, function(p) p[[nm]]))
+    if (length(chunks) == 0) tibble::tibble() else dplyr::bind_rows(chunks)
+  })
+  names(out) <- element_names
+  out
+}
+
+
+#' Put a stratum's grouping columns at the front of a check's result
+#'
+#' @param res A tibble, or a named list of tibbles.
+#' @param key_row One-row data frame of grouping values.
+#' @return \code{res} with the grouping columns prepended.
+#' @keywords internal
+#' @noRd
+prepend_stratum_keys <- function(res, key_row) {
+  add <- function(tbl) {
+    if (is.null(tbl) || NROW(tbl) == 0) return(tbl)
+    keys <- key_row[rep(1L, NROW(tbl)), , drop = FALSE]
+    rownames(keys) <- NULL
+    dplyr::bind_cols(tibble::as_tibble(keys), tibble::as_tibble(tbl))
+  }
+  if (is.data.frame(res)) return(add(res))
+  lapply(res, add)
+}
+
+
 #' Reciprocal condition number of a fit's slope covariance matrix
 #'
 #' A Wald test inverts the covariance matrix of the coefficients it tests, so its

@@ -15,6 +15,7 @@ check_balance(
   flatten = FALSE,
   quiet = TRUE,
   max_orders_apart = 6,
+  .by = NULL,
   ...
 )
 }
@@ -62,6 +63,18 @@ inverts the coefficient covariance matrix, so a large gap indicates a failed
 inversion rather than real imbalance. See the section below. Only the binary,
 no-\code{declaration} path uses this; the randomization-inference path inverts
 nothing and needs no such guard.}
+
+\item{.by}{Optional tidyselect expression naming columns to run the check
+  separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
+  within strata makes a whole-sample check answer the wrong question, so this
+  splits the data, runs the check on each stratum, and stacks the results with the
+  grouping columns prepended. The return shape is unchanged, so it composes with
+  every other argument. Strata are returned in order of first appearance and
+  \code{NA} forms its own stratum, matching \code{tidyr::nest(.by = )}.
+
+  Without it the caller has to write the \code{nest} / \code{map} / \code{unnest}
+  plumbing by hand and then attach \code{study_id} afterwards, because the
+  argument cannot survive the \code{map}. With it, \code{study_id} works.}
 
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }

@@ -123,6 +123,39 @@ for (s in studies) {
 list.files(check_dir)
 ```
 
+## When treatment was assigned within strata
+
+Real corpora are rarely one experiment per study. A study may randomize separately
+within partisanship and topic, in which case a check run on the whole study answers
+the wrong question: it pools strata that were randomized independently.
+
+`.by` runs the check within each stratum and stacks the results, with the grouping
+columns prepended.
+
+```{r by-strata}
+stratified <- datasets[["study_01"]]
+stratified$X_region <- rep(c("North", "South"), length.out = nrow(stratified))
+
+check_attrition(stratified, Z, outcomes = "Y_support",
+                .by = X_region, study_id = "study_01")
+```
+
+The return shape is unchanged, so `.by` composes with everything else: with
+`flatten = TRUE` for a single tibble, and with `check_balance()`'s two-element list.
+Note also that a grouping column is hidden from the check, so a stratifier named
+`X_region` is not then tested as a covariate that happens to be constant within
+every stratum.
+
+```{r by-strata-balance}
+check_balance(stratified, Z, covariates = c("X_age_nona", "X_educ_nona"),
+              .by = X_region, study_id = "study_01", flatten = TRUE) |>
+  subset(test == "joint")
+```
+
+Without `.by` this is a `nest()`, a `map()`, an `unnest()` per returned element, and
+a trailing `mutate()` to attach `study_id`, because the argument cannot survive the
+`map()`. That is worth knowing if you maintain scripts written before `.by` existed.
+
 ## Stacking
 
 `stack_checks()` reads every per-study file and binds it element-wise, so the

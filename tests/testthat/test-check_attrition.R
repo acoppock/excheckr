@@ -133,7 +133,7 @@ test_that("tidyselect expression for covariates works", {
   res <- check_attrition(dat, Z, outcomes = "Y",
     covariates = dplyr::starts_with("X_"))
   expect_type(res, "list")
-  expect_named(res, c("coefficients", "f_test"))
+  expect_named(res, c("simple", "coefficients", "f_test"))
 })
 
 # --- Console output ------------------------------------------------------------
@@ -229,7 +229,7 @@ test_that("covariates path returns list with coefficients and f_test", {
   res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
 
   expect_type(res, "list")
-  expect_named(res, c("coefficients", "f_test"))
+  expect_named(res, c("simple", "coefficients", "f_test"))
 })
 
 test_that("coefficients tibble has outcome and term columns", {
@@ -335,7 +335,7 @@ test_that("covariates path: uses existing _missing column", {
   res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age")
 
   expect_type(res, "list")
-  expect_named(res, c("coefficients", "f_test"))
+  expect_named(res, c("simple", "coefficients", "f_test"))
 })
 
 test_that("covariates path: f_test p_value is a valid p-value", {
@@ -397,4 +397,64 @@ test_that("estimable holds the invariant estimable == !is.na(p_value)", {
   lin <- check_attrition(dat, Z, outcomes = c("Y_none", "Y_some", "Y_all"),
                          covariates = "X_age")$f_test
   expect_equal(lin$estimable, !is.na(lin$p_value))
+})
+
+# --- Both tests returned from one call ----------------------------------------
+
+test_that("covariates path also returns the covariate-free test", {
+  set.seed(81)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n), X_inc = rnorm(n))
+  dat$Y_a <- rnorm(n)
+  dat$Y_a[rbinom(n, 1, 0.1 + 0.15 * dat$Z) == 1] <- NA
+
+  res <- check_attrition(dat, Z, outcomes = "Y_a", covariates = c("X_age", "X_inc"))
+
+  expect_named(res, c("simple", "coefficients", "f_test"))
+  expect_equal(nrow(res$simple), 1)
+  expect_equal(res$simple$df1, 1L)   # binary treatment: one degree of freedom
+  expect_equal(res$f_test$df1, 3L)   # treatment plus two interactions
+})
+
+test_that("the returned simple test is identical to calling without covariates", {
+  set.seed(82)
+  n <- 400
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n))
+  dat$Y_a <- rnorm(n); dat$Y_a[1:60] <- NA
+  dat$Y_b <- rnorm(n); dat$Y_b[1:30] <- NA
+
+  standalone <- check_attrition(dat, Z, covariates = NULL)
+  bundled <- check_attrition(dat, Z, covariates = "X_age")$simple
+
+  expect_equal(standalone, bundled)
+})
+
+test_that("study_id is appended to all three elements", {
+  set.seed(83)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_age = rnorm(n))
+  dat$Y_a <- rnorm(n); dat$Y_a[1:40] <- NA
+
+  res <- check_attrition(dat, Z, outcomes = "Y_a", covariates = "X_age",
+                         study_id = "smith_2024_study_1")
+
+  for (el in c("simple", "coefficients", "f_test")) {
+    expect_true("study_id" %in% names(res[[el]]))
+    expect_equal(unique(res[[el]]$study_id), "smith_2024_study_1")
+  }
+})
+
+test_that("the simple test survives an outcome the interacted test cannot fit", {
+  set.seed(84)
+  n <- 300
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
+  dat$X_dup <- dat$X_a                        # rank-deficient interacted model
+  dat$Y_a <- rnorm(n); dat$Y_a[1:40] <- NA
+
+  res <- suppressWarnings(
+    check_attrition(dat, Z, outcomes = "Y_a", covariates = c("X_a", "X_dup"))
+  )
+  expect_false(res$f_test$estimable)           # interacted test defeated
+  expect_true(res$simple$estimable)            # covariate-free test still fine
+  expect_false(is.na(res$simple$p_value))
 })

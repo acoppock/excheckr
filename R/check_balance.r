@@ -38,6 +38,17 @@
 #'   inversion rather than real imbalance. See the section below. Only the binary,
 #'   no-\code{declaration} path uses this; the randomization-inference path inverts
 #'   nothing and needs no such guard.
+#' @param .by Optional tidyselect expression naming columns to run the check
+#'   separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
+#'   within strata makes a whole-sample check answer the wrong question, so this
+#'   splits the data, runs the check on each stratum, and stacks the results with the
+#'   grouping columns prepended. The return shape is unchanged, so it composes with
+#'   every other argument. Strata are returned in order of first appearance and
+#'   \code{NA} forms its own stratum, matching \code{tidyr::nest(.by = )}.
+#'
+#'   Without it the caller has to write the \code{nest} / \code{map} / \code{unnest}
+#'   plumbing by hand and then attach \code{study_id} afterwards, because the
+#'   argument cannot survive the \code{map}. With it, \code{study_id} works.
 #' @param ... Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).
 #'
 #' @return When \code{flatten = FALSE} (the default), a list with two elements:
@@ -214,7 +225,8 @@
 #' @export
 check_balance <- function(data, treatment, covariates = NULL, .method = estimatr::lm_robust,
                           declaration = NULL, sims = 1000, study_id = NULL,
-                          flatten = FALSE, quiet = TRUE, max_orders_apart = 6, ...) {
+                          flatten = FALSE, quiet = TRUE, max_orders_apart = 6,
+                          .by = NULL, ...) {
   # Capture treatment variable name
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
@@ -235,6 +247,31 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
   if (length(varnames) == 0) {
     warning("No covariates selected for balance check.")
     return(invisible(NULL))
+  }
+
+  # Stratified run. Recurse with the covariate list already resolved to names, so
+  # nothing needs re-selecting per stratum, and print once at the end rather than
+  # once per stratum.
+  by_quo <- rlang::enquo(.by)
+  if (!rlang::quo_is_null(by_quo)) {
+    # A grouping column is hidden from the stratum data, so it must not remain in
+    # the covariate list either. It is constant within a stratum regardless.
+    varnames <- setdiff(varnames, by_column_names(data, by_quo))
+    if (length(varnames) == 0) {
+      warning("No covariates left for balance check after removing .by columns.")
+      return(invisible(NULL))
+    }
+    result <- run_by_strata(data, by_quo, function(d) {
+      check_balance(d, !!treatment_name, covariates = varnames, .method = .method,
+                    declaration = declaration, sims = sims, study_id = study_id,
+                    flatten = flatten, quiet = TRUE,
+                    max_orders_apart = max_orders_apart, ...)
+    })
+    if (!quiet) {
+      print(result)
+      return(invisible(result))
+    }
+    return(result)
   }
 
   # Detect treatment type

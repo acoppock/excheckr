@@ -12,6 +12,7 @@ check_attrition(
   .method = estimatr::lm_robust,
   study_id = NULL,
   quiet = TRUE,
+  .by = NULL,
   ...
 )
 }
@@ -39,6 +40,18 @@ column holding this value is appended to every returned tibble.}
 auto-prints at the console. \code{FALSE} prints a labelled report instead
 and returns the same object invisibly, so nothing is printed twice.}
 
+\item{.by}{Optional tidyselect expression naming columns to run the check
+  separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
+  within strata makes a whole-sample check answer the wrong question, so this
+  splits the data, runs the check on each stratum, and stacks the results with the
+  grouping columns prepended. The return shape is unchanged, so it composes with
+  every other argument. Strata are returned in order of first appearance and
+  \code{NA} forms its own stratum, matching \code{tidyr::nest(.by = )}.
+
+  Without it the caller has to write the \code{nest} / \code{map} / \code{unnest}
+  plumbing by hand and then attach \code{study_id} afterwards, because the
+  argument cannot survive the \code{map}. With it, \code{study_id} works.}
+
 \item{...}{Additional arguments passed to `.method` (e.g., `clusters`, `se_type`).}
 }
 \value{
@@ -50,8 +63,10 @@ When \code{covariates} is \code{NULL}, a tibble with one row per
   because with three or more arms there is no single number to report. Use
   \code{covariates} (below) if you want the coefficients themselves.
 
-  When \code{covariates} is provided, a list with two elements:
+  When \code{covariates} is provided, a list with three elements:
   \describe{
+    \item{simple}{The covariate-free test above, computed on the same data, so
+      that asking for the interacted test does not cost you the simpler one.}
     \item{coefficients}{A tibble of all coefficient estimates from the Lin model
       (treatment, demeaned covariates, and their interactions).}
     \item{f_test}{A tibble with one row per outcome containing the Wald F-test
@@ -79,6 +94,29 @@ compares this to the restricted model \code{missingness ~ demeaned covariates},
 testing whether treatment and its interactions with covariates jointly predict
 attrition.
 }
+\section{Read the two tests together, not one instead of the other}{
+
+The covariate-free test asks whether dropout rates differ across arms. The
+interacted test asks the more demanding question of whether they differ
+\emph{anywhere} in covariate space, and it spends a degree of freedom per
+covariate per arm to ask it. Neither subsumes the other, and the covariate-free
+one is usually the criterion to act on:
+\itemize{
+  \item It is sharper for the arm-level question. On a simulated study with
+    planted differential attrition and two covariates, the covariate-free test
+    returns \code{p = 0.0006} on 1 degree of freedom where the interacted test
+    returns \code{0.0066} on 3.
+  \item It is well calibrated under cluster randomization, at 4.3 percent
+    against a nominal 5, where the interacted test rejects about 12 percent of
+    the time and no correction repairs it.
+  \item It cannot run out of degrees of freedom. The interacted test can, which
+    is what \code{estimatrTools::check_attrition_lasso} exists to address.
+}
+Earlier versions returned only the interacted test when \code{covariates} was
+supplied, so projects that wanted both called the function twice. Both now come
+back from one call, and the second fit is no longer wasted.
+}
+
 \section{When there is no test to run}{
 
 \code{estimable} says whether a test was actually computed, and holds the

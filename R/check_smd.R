@@ -36,6 +36,17 @@
 #'   different samples and reading them together will mislead.
 #' @param study_id Optional character scalar. If provided, a \code{study_id}
 #'   column holding this value is appended to the result.
+#' @param .by Optional tidyselect expression naming columns to run the check
+#'   separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
+#'   within strata makes a whole-sample check answer the wrong question, so this
+#'   splits the data, runs the check on each stratum, and stacks the results with the
+#'   grouping columns prepended. The return shape is unchanged, so it composes with
+#'   every other argument. Strata are returned in order of first appearance and
+#'   \code{NA} forms its own stratum, matching \code{tidyr::nest(.by = )}.
+#'
+#'   Without it the caller has to write the \code{nest} / \code{map} / \code{unnest}
+#'   plumbing by hand and then attach \code{study_id} afterwards, because the
+#'   argument cannot survive the \code{map}. With it, \code{study_id} works.
 #' @param threshold Absolute SMD above which \code{flag} is \code{TRUE}
 #'   (default \code{0.1}, a common rule of thumb).
 #'
@@ -62,7 +73,8 @@
 #' @family per-study checks
 #' @export
 check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
-                      weights = NULL, study_id = NULL, threshold = 0.1) {
+                      weights = NULL, study_id = NULL, threshold = 0.1,
+                      .by = NULL) {
   treatment_name <- rlang::as_name(rlang::ensym(treatment))
 
   covariates_quo <- rlang::enquo(covariates)
@@ -89,6 +101,20 @@ check_smd <- function(data, treatment, covariates = NULL, reference = NULL,
   if (length(absent) > 0) {
     stop("check_smd: covariate(s) not found in ", deparse(substitute(data)), ": ",
          paste(absent, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # Stratified run, with the covariate list already resolved to names.
+  by_quo <- rlang::enquo(.by)
+  if (!rlang::quo_is_null(by_quo)) {
+    varnames <- setdiff(varnames, by_column_names(data, by_quo))
+    if (length(varnames) == 0) {
+      warning("No covariates left for SMD check after removing .by columns.")
+      return(invisible(NULL))
+    }
+    return(run_by_strata(data, by_quo, function(d) {
+      check_smd(d, !!treatment_name, covariates = varnames, reference = reference,
+                weights = weights, study_id = study_id, threshold = threshold)
+    }))
   }
 
   if (is.null(weights)) {

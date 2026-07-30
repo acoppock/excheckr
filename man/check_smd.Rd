@@ -11,7 +11,8 @@ check_smd(
   reference = NULL,
   weights = NULL,
   study_id = NULL,
-  threshold = 0.1
+  threshold = 0.1,
+  .by = NULL
 )
 }
 \arguments{
@@ -43,6 +44,18 @@ column holding this value is appended to the result.}
 
 \item{threshold}{Absolute SMD above which \code{flag} is \code{TRUE}
 (default \code{0.1}, a common rule of thumb).}
+
+\item{.by}{Optional tidyselect expression naming columns to run the check
+  separately within, e.g. \code{.by = c(X_pid_3, topic)}. Treatment assigned
+  within strata makes a whole-sample check answer the wrong question, so this
+  splits the data, runs the check on each stratum, and stacks the results with the
+  grouping columns prepended. The return shape is unchanged, so it composes with
+  every other argument. Strata are returned in order of first appearance and
+  \code{NA} forms its own stratum, matching \code{tidyr::nest(.by = )}.
+
+  Without it the caller has to write the \code{nest} / \code{map} / \code{unnest}
+  plumbing by hand and then attach \code{study_id} afterwards, because the
+  argument cannot survive the \code{map}. With it, \code{study_id} works.}
 }
 \value{
 A tibble with one row per covariate-level-by-arm contrast and
