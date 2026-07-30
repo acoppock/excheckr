@@ -14,9 +14,14 @@
 #'     covariate by covariate and jointly? \code{\link{check_smd}} answers the
 #'     companion question of whether an imbalance is large enough to matter.
 #'   \item \code{\link{check_attrition}}: does treatment predict outcome
-#'     missingness? \code{\link{check_attrition_lasso}} is a variant for designs
-#'     where the fully interacted test runs out of degrees of freedom.
+#'     missingness, on its own and allowing the pattern to differ across
+#'     covariates?
 #' }
+#' For designs where the fully interacted attrition test runs out of degrees of
+#' freedom, \code{estimatrTools::check_attrition_lasso} selects a parsimonious
+#' covariate set first. It lives there rather than here because it fits an
+#' estimator of its own, and this package only ever calls estimators that other
+#' packages own.
 #'
 #' @section Checking many studies:
 #' A meta-analysis or multi-study project runs those checks once per study and

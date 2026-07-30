@@ -72,7 +72,6 @@ check_missingness_nona(dat, nona_suffix = "_imputed")
 \seealso{
 Other per-study checks:
 \code{\link[=check_attrition]{check_attrition()}},
-\code{\link[=check_attrition_lasso]{check_attrition_lasso()}},
 \code{\link[=check_balance]{check_balance()}},
 \code{\link[=check_covariate_missingness]{check_covariate_missingness()}},
 \code{\link[=check_smd]{check_smd()}},

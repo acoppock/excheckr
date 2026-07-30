@@ -14,7 +14,6 @@ reference:
   - check_balance
   - check_smd
   - check_attrition
-  - check_attrition_lasso
   - check_covariate_missingness
 
 - title: Checking many studies

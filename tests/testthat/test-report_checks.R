@@ -52,7 +52,7 @@ test_that("report_checks skips absent elements", {
   expect_named(rep, "out_of_bounds")
 })
 
-test_that("report_checks prefers the flag column when check_attrition_lasso ran", {
+test_that("report_checks prefers a logical flag column over its own alpha", {
   checks <- list(
     attrition_lasso = data.frame(
       study_id = c("a", "b"),

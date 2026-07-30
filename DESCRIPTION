@@ -34,7 +34,6 @@ Suggests:
     DeclareDesign,
     future,
     future.apply,
-    glmnet,
     randomizr,
     ri2,
     tidyr,

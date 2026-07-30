@@ -3,8 +3,9 @@
 #' Applies the standard "what needs a human look" filters to the output of
 #' \code{\link{stack_checks}} and returns only the rows that failed. Elements
 #' absent from \code{checks} are skipped, so the same call works whether the
-#' pipeline ran \code{\link{check_attrition}}, \code{\link{check_attrition_lasso}},
-#' or neither.
+#' pipeline ran \code{\link{check_attrition}}, an
+#' \code{attrition_lasso} element from
+#' \code{estimatrTools::check_attrition_lasso}, or neither.
 #'
 #' The filters are:
 #' \describe{
@@ -24,7 +25,9 @@
 #'     chance; use \code{\link{summarize_check_pvalues}} to judge whether there
 #'     are more than chance would give.}
 #'   \item{attrition}{\code{attrition} or \code{attrition_lasso} rows flagged at
-#'     \code{alpha}.}
+#'     \code{alpha}. When the element carries a logical \code{flag} column, that
+#'     column is used instead and \code{alpha} is ignored, because the producer
+#'     already applied a threshold of its own.}
 #' }
 #'
 #' @param checks A named list of stacked check tibbles, as returned by
@@ -103,7 +106,8 @@ report_checks <- function(checks, alpha = 0.05) {
     # (a party or actor label, say), and reading that as a failure indicator
     # would either error or silently report the wrong rows.
     if ("flag" %in% names(attrition) && is.logical(attrition$flag)) {
-      # check_attrition_lasso already computed the flag at its own threshold
+      # A logical flag means the producer already applied its own threshold (as
+      # estimatrTools::check_attrition_lasso does), so alpha does not apply here.
       out$attrition <- attrition[!is.na(attrition$flag) & attrition$flag, , drop = FALSE]
     } else if ("p_value" %in% names(attrition)) {
       out$attrition <- attrition[

@@ -23,8 +23,9 @@ An object of class \code{"excheckr_report"}: a named list of
 Applies the standard "what needs a human look" filters to the output of
 \code{\link{stack_checks}} and returns only the rows that failed. Elements
 absent from \code{checks} are skipped, so the same call works whether the
-pipeline ran \code{\link{check_attrition}}, \code{\link{check_attrition_lasso}},
-or neither.
+pipeline ran \code{\link{check_attrition}}, an
+\code{attrition_lasso} element from
+\code{estimatrTools::check_attrition_lasso}, or neither.
 }
 \details{
 The filters are:
@@ -45,7 +46,9 @@ The filters are:
     chance; use \code{\link{summarize_check_pvalues}} to judge whether there
     are more than chance would give.}
   \item{attrition}{\code{attrition} or \code{attrition_lasso} rows flagged at
-    \code{alpha}.}
+    \code{alpha}. When the element carries a logical \code{flag} column, that
+    column is used instead and \code{alpha} is ignored, because the producer
+    already applied a threshold of its own.}
 }
 }
 \examples{
