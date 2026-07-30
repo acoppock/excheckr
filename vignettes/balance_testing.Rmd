@@ -273,3 +273,27 @@ res_ri <- check_balance(
 ```
 
 The RI joint test p-value is exact by construction: it compares the observed multinomial LR statistic to its randomization distribution under the declared assignment mechanism.
+
+## What randomization inference asks of you
+
+The machinery is `ri2::conduct_ri()`, with the multinomial likelihood-ratio statistic as the test function and the p-value taken from the upper tail. `ri2` is in Suggests rather than Imports, so the RI path errors with an install hint if it is missing, and everything else in the package works without it.
+
+"Exact by construction" is conditional on the construction being right, and three things have to hold.
+
+**The declaration must describe the assignment mechanism that actually ran.** RI compares the observed statistic to the distribution of statistics under the permutations the declaration allows. Declare the wrong mechanism and you get an exact p-value for an experiment nobody ran, which is worse than an approximate one for the right experiment. If assignment was blocked, the declaration needs the blocks; if clustered, the clusters. `declaration = "complete"` is shorthand for complete random assignment holding the observed arm sizes fixed, which is a reasonable default for a within-stratum balance test but is a real assumption, not a formality.
+
+**One row per randomized unit.** This is the trap worth naming, because nothing errors when you fall into it. If treatment was assigned to respondents and your data has several rows per respondent, a declaration that permutes rows independently breaks the design and the resulting p-values are anti-conservative. Check it rather than assume it:
+
+```{r ri-units, eval = FALSE}
+# does any unit appear more than once in the data being permuted?
+dat |>
+  dplyr::count(resp_id) |>
+  dplyr::filter(n > 1) |>
+  nrow()
+```
+
+In one real corpus of 99 studies this held for 98 of them, and the exception was a within-subjects design whose declaration had to cluster on the respondent identifier. Two of the other studies were also within-subjects, but their balance checks ran within topic, and since a respondent contributes one row per topic each stratum was one row per respondent after all. The point is that the answer was not guessable from the design description.
+
+**It costs real time.** Each simulation refits the test function, so an RI joint test is roughly `sims` multinomial fits. On a corpus that meant about one study per 40 seconds at `sims = 1000`, against effectively nothing for the parametric test. Budget for it, and consider running RI as a separate confirmatory pass over the studies that need it rather than inside the main checking loop.
+
+None of this argues against RI. It is the right tool when the parametric reference distribution is untrustworthy, which the numbers above show it often is. It argues for spending a few minutes establishing what the design was before declaring it.

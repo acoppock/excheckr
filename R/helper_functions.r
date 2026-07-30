@@ -519,19 +519,24 @@ stat_mode <- function(x, na.rm = TRUE) {
 #' @importFrom stats as.formula logLik pchisq complete.cases
 #' @importFrom tibble tibble
 multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
-  # Restrict to complete cases
+  # Arms present before complete-case filtering, so that an arm lost to missing data
+  # can be told apart from an arm the subset never used.
+  arms_before <- levels(droplevels(as.factor(data[[treatment_name]])))
+
   keep_cols <- c(treatment_name, covariate_cols)
   cc <- stats::complete.cases(data[, keep_cols, drop = FALSE])
   data <- data[cc, , drop = FALSE]
   n <- nrow(data)
 
+  # Count only the arms that actually carry data. A declared-but-unused level is not
+  # an empty group, and charging degrees of freedom for it inflates q.
+  data[[treatment_name]] <- droplevels(as.factor(data[[treatment_name]]))
   z_factor <- data[[treatment_name]]
-  if (!is.factor(z_factor)) z_factor <- as.factor(z_factor)
-  K <- length(levels(z_factor))
+  K <- nlevels(z_factor)
   p_covar <- length(covariate_cols)
   q <- (K - 1) * p_covar
 
-  na_result <- tibble::tibble(
+  na_result <- function(status) tibble::tibble(
     F_stat    = NA_real_,
     statistic = "LR/df",
     df1       = NA_integer_,
@@ -541,26 +546,34 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     # inversion-free counterpart to compare against.
     p_value_classical = NA_real_,
     nobs      = as.integer(n),
+    obs_per_param = NA_real_,
+    status    = status,
     estimable = FALSE
   )
 
-  # Check for empty treatment groups after complete-case filtering
-  level_counts <- table(z_factor)
-  empty_groups <- names(level_counts)[level_counts == 0]
-  if (length(empty_groups) > 0) {
-    warning(paste(
-      "Joint balance test not estimable: treatment group(s)",
-      paste(empty_groups, collapse = ", "),
-      "empty after removing incomplete cases."
-    ))
-    return(na_result)
+  # An arm that had data and lost all of it to complete-case filtering is a real
+  # problem worth naming. An arm the subset never used is not, and reporting it as
+  # missing data sends the reader looking for missingness that is not there.
+  lost_arms <- setdiff(arms_before, levels(z_factor))
+  if (length(lost_arms) > 0) {
+    warning("Joint balance test not estimable: treatment group(s) ",
+            paste(lost_arms, collapse = ", "),
+            " lost every observation to missing covariate values. ",
+            "Use imputed covariates, or drop the covariates carrying the missingness.")
+    return(na_result("arm_lost_to_missingness"))
+  }
+
+  if (K < 2) {
+    warning("Joint balance test not estimable: only ", K,
+            " treatment arm present after complete-case filtering.")
+    return(na_result("single_arm"))
   }
 
   # Check for zero-variance covariates
   for (cname in covariate_cols) {
     if (length(unique(data[[cname]])) <= 1) {
       warning("Joint balance test not estimable: constant covariate within group.")
-      return(na_result)
+      return(na_result("constant_covariate"))
     }
   }
 
@@ -576,7 +589,7 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
   )
   if (is.null(fit_full)) {
     warning("Joint balance test not estimable: multinomial model failed to converge.")
-    return(na_result)
+    return(na_result("no_convergence"))
   }
 
   fit_null <- suppressWarnings(nnet::multinom(null_formula, data = data, trace = FALSE))
@@ -592,6 +605,10 @@ multinomial_lr_joint_test <- function(data, treatment_name, covariate_cols) {
     p_value   = p_value,
     p_value_classical = NA_real_,
     nobs      = as.integer(n),
+    # The chi-squared reference is asymptotic in observations per COEFFICIENT here,
+    # since this path inverts no matrix. See the statistic column before comparing.
+    obs_per_param = if (q > 0) n / q else NA_real_,
+    status    = "tested",
     estimable = TRUE
   )
 }
@@ -660,6 +677,10 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
     p_value   = p_value,
     p_value_classical = NA_real_,
     nobs      = as.integer(n),
+    # Randomization inference is exact and asymptotic in nothing, so there is no
+    # ratio to report against.
+    obs_per_param = NA_real_,
+    status    = "tested",
     estimable = TRUE
   )
 }

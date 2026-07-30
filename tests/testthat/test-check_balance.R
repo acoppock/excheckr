@@ -148,7 +148,7 @@ test_that("empty arm after complete-case filtering returns NA joint_test with a 
 
   expect_warning(
     res <- check_balance(dat, Z),
-    regexp = "empty after removing incomplete cases"
+    regexp = "lost every observation to missing covariate values"
   )
 
   expect_equal(nrow(res$joint_test), 1)
@@ -578,4 +578,132 @@ test_that("check_attrition warns about aliased covariates too", {
   )
   expect_true(any(grepl("rank deficient", ws)))
   expect_true(any(grepl("X_dup is exactly determined by X_a", ws)))
+})
+
+# --- Unused treatment levels in a subset --------------------------------------
+
+test_that("a declared-but-unused arm does not kill the joint test", {
+  # The shape that broke a real corpus: a study-level factor declares five arms and
+  # a party-by-topic subset uses three. No data is missing.
+  set.seed(111)
+  n <- 900
+  dat <- data.frame(
+    Z = factor(rep(c("none", "in_support", "out_support"), length.out = n),
+               levels = c("none", "in_oppose", "in_support", "out_oppose", "out_support")),
+    X_a = rnorm(n), X_b = rnorm(n), X_c = rnorm(n)
+  )
+  expect_equal(nlevels(dat$Z), 5)
+  expect_equal(sum(table(dat$Z) > 0), 3)
+  expect_false(anyNA(dat))
+
+  res <- check_balance(dat, Z, quiet = TRUE)
+
+  expect_false(is.na(res$joint_test$p_value))
+  expect_true(res$joint_test$estimable)
+  # df1 counts present arms, not declared ones: (3-1) * 3 covariates
+  expect_equal(res$joint_test$df1, 6L)
+})
+
+test_that("an unused arm no longer produces a missing-data warning", {
+  set.seed(112)
+  n <- 600
+  dat <- data.frame(
+    Z = factor(rep(c("a", "b"), length.out = n), levels = c("a", "b", "never_used")),
+    X_a = rnorm(n), X_b = rnorm(n)
+  )
+  expect_silent(check_balance(dat, Z, quiet = TRUE))
+})
+
+test_that("a two-arm subset of a multi-arm factor uses the binary F path", {
+  set.seed(113)
+  n <- 600
+  dat <- data.frame(
+    Z = factor(rep(c("a", "b"), length.out = n), levels = c("a", "b", "c", "d")),
+    X_a = rnorm(n), X_b = rnorm(n)
+  )
+  res <- check_balance(dat, Z, quiet = TRUE)
+  # declared levels would have routed this to the multinomial path
+  expect_equal(res$joint_test$statistic, "F")
+  expect_false(is.na(res$joint_test$df2))
+})
+
+test_that("an arm genuinely emptied by missing covariates still warns, and says so", {
+  set.seed(114)
+  n <- 300
+  dat <- data.frame(
+    Z = factor(rep(c("a", "b", "c"), length.out = n)),
+    X_a = rnorm(n), X_b = rnorm(n)
+  )
+  # every observation in arm c loses a covariate
+  dat$X_a[dat$Z == "c"] <- NA
+
+  expect_warning(res <- check_balance(dat, Z, quiet = TRUE),
+                 "lost every observation to missing covariate values")
+  expect_true(is.na(res$joint_test$p_value))
+  expect_false(res$joint_test$estimable)
+})
+
+# --- Diagnostics live in the data, not only in warnings ------------------------
+
+test_that("the joint test carries status and obs_per_param on every path", {
+  set.seed(121)
+  n <- 600
+  dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n), X_b = rnorm(n))
+
+  binary <- check_balance(dat, Z, quiet = TRUE)$joint_test
+  expect_true(all(c("status", "obs_per_param", "p_value_classical") %in% names(binary)))
+  expect_equal(binary$status, "tested")
+  expect_equal(binary$estimable, binary$status == "tested")
+  # Wald path counts variance parameters
+  expect_equal(binary$obs_per_param, n / (binary$df1 * (binary$df1 + 1) / 2))
+
+  dat$Zm <- rep(c("a", "b", "c"), length.out = n)
+  multi <- check_balance(dat, Zm, covariates = c("X_a", "X_b"), quiet = TRUE)$joint_test
+  expect_equal(multi$status, "tested")
+  # likelihood-ratio path counts coefficients, since it inverts nothing
+  expect_equal(multi$obs_per_param, as.numeric(multi$nobs) / multi$df1)
+})
+
+test_that("status names the reason a joint test is absent", {
+  set.seed(122)
+  n <- 300
+  dat <- data.frame(Z = factor(rep(c("a", "b", "c"), length.out = n)),
+                    X_a = rnorm(n), X_b = rnorm(n))
+  dat$X_a[dat$Z == "c"] <- NA          # arm c loses every observation
+
+  res <- suppressWarnings(check_balance(dat, Z, quiet = TRUE))
+  expect_equal(res$joint_test$status, "arm_lost_to_missingness")
+  expect_false(res$joint_test$estimable)
+  expect_true(is.na(res$joint_test$p_value))
+})
+
+test_that("the thin-battery diagnostic survives into saved output", {
+  # The failure this guards: a warning raised inside map() inside mutate() is
+  # collapsed by dplyr to a bare count, and write_rds keeps none of it.
+  set.seed(123)
+  n <- 60
+  dat <- data.frame(Z = rep(0:1, n / 2))
+  for (j in 1:8) dat[[paste0("X_", j)]] <- rnorm(n)
+
+  res <- suppressWarnings(check_balance(dat, Z, quiet = TRUE))
+  f <- tempfile(fileext = ".rds")
+  saveRDS(res$joint_test, f)
+  reloaded <- readRDS(f)
+
+  expect_lt(reloaded$obs_per_param, 10)        # readable after a round trip
+  expect_false(is.na(reloaded$p_value_classical))
+  expect_equal(reloaded$status, "tested")
+})
+
+test_that("obs_per_param is NA on the randomization-inference path", {
+  skip_if_not_installed("ri2")
+  skip_if_not_installed("randomizr")
+  set.seed(124)
+  n <- 80
+  dat <- data.frame(Z = randomizr::complete_ra(n, conditions = c("a", "b")),
+                    X_a = rnorm(n), X_b = rnorm(n))
+  decl <- randomizr::declare_ra(N = n, conditions = c("a", "b"))
+  j <- check_balance(dat, Z, declaration = decl, sims = 100, quiet = TRUE)$joint_test
+  expect_true(is.na(j$obs_per_param))
+  expect_equal(j$status, "tested")
 })

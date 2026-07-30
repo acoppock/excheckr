@@ -150,6 +150,33 @@ design to 4.5 percent, and a warning is emitted when \code{clusters} is passed
 without one.
 }
 
+\section{Why the diagnostics are columns and not warnings}{
+
+Every reason a joint test is untrustworthy or absent is returned in the data:
+\code{status} says why there is no p-value, \code{obs_per_param} says whether the
+reference distribution can be believed, and \code{p_value_classical} gives an
+inversion-free second opinion. The warnings are still raised, but they are the
+backup, not the record.
+
+That is a lesson learned the hard way rather than a style preference. Callers run
+these checks inside \code{nest()} / \code{map()} / \code{mutate()}, and
+\code{dplyr} collapses warnings raised inside \code{map()} to a bare count with no
+text. Nothing survives \code{write_rds()} at all, so a stacked corpus read weeks
+later has only columns. In one real run a correct warning fired on 401 of 651 fits
+and appeared in the console as "There were 50 or more warnings", which is how a
+22.7 percent rejection rate went unnoticed.
+
+\code{status} takes \code{"tested"}, \code{"arm_lost_to_missingness"},
+\code{"single_arm"}, \code{"constant_covariate"}, \code{"no_convergence"} or
+\code{"not_estimable"}, and \code{estimable} is \code{status == "tested"}.
+\code{obs_per_param} is observations per estimated parameter, which means variance
+parameters \eqn{q(q+1)/2} on the Wald path and coefficients \eqn{q} on the
+likelihood-ratio path, because that is what each reference distribution is
+asymptotic in. It is \code{NA} on the randomization-inference path, which is exact
+and asymptotic in nothing. Group by \code{statistic} before comparing it across
+studies, for the same reason \code{F_stat} needs that treatment.
+}
+
 \section{Aliased covariates}{
  warned about, never dropped for you:
 A covariate that is a linear function of the others carries no separate

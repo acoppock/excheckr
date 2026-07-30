@@ -95,6 +95,31 @@
 #' design to 4.5 percent, and a warning is emitted when \code{clusters} is passed
 #' without one.
 #'
+#' @section Why the diagnostics are columns and not warnings:
+#' Every reason a joint test is untrustworthy or absent is returned in the data:
+#' \code{status} says why there is no p-value, \code{obs_per_param} says whether the
+#' reference distribution can be believed, and \code{p_value_classical} gives an
+#' inversion-free second opinion. The warnings are still raised, but they are the
+#' backup, not the record.
+#'
+#' That is a lesson learned the hard way rather than a style preference. Callers run
+#' these checks inside \code{nest()} / \code{map()} / \code{mutate()}, and
+#' \code{dplyr} collapses warnings raised inside \code{map()} to a bare count with no
+#' text. Nothing survives \code{write_rds()} at all, so a stacked corpus read weeks
+#' later has only columns. In one real run a correct warning fired on 401 of 651 fits
+#' and appeared in the console as "There were 50 or more warnings", which is how a
+#' 22.7 percent rejection rate went unnoticed.
+#'
+#' \code{status} takes \code{"tested"}, \code{"arm_lost_to_missingness"},
+#' \code{"single_arm"}, \code{"constant_covariate"}, \code{"no_convergence"} or
+#' \code{"not_estimable"}, and \code{estimable} is \code{status == "tested"}.
+#' \code{obs_per_param} is observations per estimated parameter, which means variance
+#' parameters \eqn{q(q+1)/2} on the Wald path and coefficients \eqn{q} on the
+#' likelihood-ratio path, because that is what each reference distribution is
+#' asymptotic in. It is \code{NA} on the randomization-inference path, which is exact
+#' and asymptotic in nothing. Group by \code{statistic} before comparing it across
+#' studies, for the same reason \code{F_stat} needs that treatment.
+#'
 #' @section Aliased covariates: warned about, never dropped for you:
 #' A covariate that is a linear function of the others carries no separate
 #' information, and the joint test cannot estimate a coefficient for it. When that
@@ -302,24 +327,20 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     return(result)
   }
 
-  # Detect treatment type
-  z_col <- data[[treatment_name]]
-  if (is.factor(z_col)) {
-    z_levels <- levels(z_col)
-  } else if (is.character(z_col)) {
-    z_col <- as.factor(z_col)
-    z_levels <- levels(z_col)
-  } else {
-    # numeric
-    z_levels <- sort(unique(z_col))
-  }
+  # Treatment becomes a factor carrying only the arms actually present, so that the
+  # covariate-by-covariate regressions get K-1 real dummies and the glance F-test is
+  # the overall model F.
+  #
+  # droplevels() is not housekeeping here. A study-level factor keeps every arm it
+  # declares even in a subset that uses only some of them, which is the normal shape
+  # of a stratified corpus: a party-by-topic cell may use three of five arms. Left in,
+  # the unused levels inflate the joint test's degrees of freedom, route a genuinely
+  # two-arm subset down the multi-arm path, and trip the joint test's empty-arm guard,
+  # which then reports missing data that does not exist. That last one silenced 69
+  # percent of the joint tests in one real corpus.
+  data[[treatment_name]] <- droplevels(as.factor(data[[treatment_name]]))
+  z_levels <- levels(data[[treatment_name]])
   is_multiarm <- length(z_levels) > 2
-
-  # Ensure treatment is a factor in data for covariate-by-covariate X ~ Z regressions
-  # (so lm_robust creates K-1 dummies and the glance F-test is the overall model F)
-  if (!is.factor(data[[treatment_name]])) {
-    data[[treatment_name]] <- as.factor(data[[treatment_name]])
-  }
 
   # Detect a clusters argument in the dots. The covariate-by-covariate tests are
   # well calibrated with cluster-robust standard errors, but the joint test is
@@ -452,14 +473,23 @@ check_balance <- function(data, treatment, covariates = NULL, .method = estimatr
     # what they asked for.
     warn_wide_battery(fit_joint, gl, min_obs_per_vparam, "check_balance")
 
+    q_joint <- model_df1(fit_joint)
     joint_test <- tibble::tibble(
       F_stat = gl$statistic,
       statistic = "F",
-      df1 = model_df1(fit_joint),
+      df1 = q_joint,
       df2 = as.integer(gl$df.residual),
       p_value = gl$p.value,
       p_value_classical = classical_f_pvalue(fit_joint, analysis_data[[".Z_numeric"]]),
       nobs = as.integer(gl$nobs),
+      # Carried in the data because a warning does not survive the idiom callers
+      # actually write: dplyr::mutate() collapses warnings raised inside map() to a
+      # bare count with no text, and nothing at all survives write_rds(). A reader
+      # of a stacked corpus has only the columns.
+      obs_per_param = if (!is.na(q_joint) && q_joint > 0) {
+        as.numeric(gl$nobs) / (q_joint * (q_joint + 1) / 2)
+      } else NA_real_,
+      status = if (is.na(gl$p.value)) "not_estimable" else "tested",
       estimable = !is.na(gl$p.value)
     )
   } else {
