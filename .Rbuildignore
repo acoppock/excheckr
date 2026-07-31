@@ -3,7 +3,7 @@
 ^\.claude$
 ^Rplots\.pdf$
 ^excheckr_.*\.tar\.gz$
-^LOGFILE\.md$
+^notes$
 ^doc$
 ^Meta$
 ^_pkgdown\.yml$
