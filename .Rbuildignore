@@ -13,3 +13,4 @@
 ^\.\.Rcheck$
 ^vignettes/.*_cache$
 ^\.github$
+^cran-comments\.md$
