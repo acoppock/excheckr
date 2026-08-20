@@ -29,8 +29,10 @@ claim it names is still expected to reproduce.}
 
 \item{format}{\code{"id"} prints \code{CLAIM <id> = <value> || [verdict]
 <label>}, which downstream coverage gates parse and which must stay byte
-stable. \code{"audit"} prints the columnar manuscript form. The choice
-changes the printed line only; no verdict depends on it.}
+stable. \code{"audit"} prints the columnar manuscript form, and gives an
+unnamed statement the source \code{"text"} so that the manifest a coverage
+gate reads always names a document. The choice changes the printed line
+only; no verdict depends on it.}
 
 \item{width}{Length-2 integer, the label and value column widths used by
 \code{format = "audit"}.}

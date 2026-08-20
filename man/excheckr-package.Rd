@@ -6,7 +6,7 @@
 \alias{excheckr-package}
 \title{excheckr: Tools for Exploring and Checking Experimental Data}
 \description{
-Functions for diagnosing, summarizing, and visualizing covariate balance, differential attrition, missingness, and data integrity in experimental datasets. Includes per-study checks that can be labelled and stacked across many studies, plus triage and uniform-reference diagnostics for the resulting collection of tests.
+Functions for diagnosing, summarizing, and visualizing covariate balance, differential attrition, missingness, and data integrity in experimental datasets. Includes per-study checks that can be labelled and stacked across many studies, plus triage and uniform-reference diagnostics for the resulting collection of tests. A second group of functions audits the claims an article makes about such data, scoring every number the text prints against the value the analysis pipeline produces and against any correction a published erratum supplies, and failing the run when a claim is in neither state.
 }
 \section{Checking one study}{
 

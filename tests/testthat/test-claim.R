@@ -177,7 +177,25 @@ test_that("digits is derived from the published value rather than typed twice", 
 
 test_that("digits is required where there is no published value to derive it from", {
   start(format = "id")
-  expect_error(claim("a", 3, "no published value"), "digits must be given")
+  expect_error(claim("a", 3, "no published value", expect = "shape"),
+               "digits must be given")
+})
+
+test_that("a claim with nothing to compare against is an error, not an unasserted pass", {
+  # The manuscript direction types the expectation at the call site, so a
+  # forgotten published = has nowhere to fall back to. Before this it printed,
+  # scored shape, counted as unasserted and passed every gate.
+  start(format = "audit")
+  expect_error(claim("papers", 106, "papers in the corpus", digits = 0),
+               "asserts nothing")
+  expect_equal(claim("papers", 106, "papers in the corpus", digits = 0,
+                     expect = "shape"), "shape")
+})
+
+test_that("with an extraction registered, a claim it holds no value for is still shape", {
+  start(published = published_fixture(), format = "id")
+  expect_equal(claim("n_samples", 3, "samples the study was run in", digits = 0),
+               "shape")
 })
 
 
@@ -258,7 +276,7 @@ test_that("a clean run passes every gate", {
 
 test_that("the gates that need a spine say so rather than passing vacuously", {
   start(format = "id")
-  claim("a", 3, "no spine registered", digits = 0)
+  claim("a", 3, "no spine registered", published = "3")
   expect_message(assert_claims(), "skipping gate 2")
 })
 
@@ -281,7 +299,42 @@ test_that("the audit summary line keeps the format the check scripts parse", {
   claim("b", 107, "countries", published = "48")
   claim_evidence("the estimates mostly cluster near zero")
   expect_output(claim_summary(),
-                "CLAIM SUMMARY: asserted=2 matched=1 mismatched=1 unasserted=2")
+                "CLAIM SUMMARY: asserted=2 matched=1 mismatched=1 unasserted=1")
+})
+
+test_that("the audit summary prints nothing above the mismatch block", {
+  # meta_conjoint rules that line with sep("CLAIM SUMMARY"), meta_propaganda with
+  # 78 dashes. The separator is the caller's, so neither has to change to adopt
+  # this one.
+  start(format = "audit")
+  claim("a", 106, "papers", published = "106")
+  expect_output(claim_summary(), "^CLAIM SUMMARY: asserted=1")
+})
+
+test_that("a failure is counted as mismatched and not also as unasserted", {
+  # check_claim_values.R reports unasserted as "printed as evidence only", so a
+  # count that grew with every wrong number would report judgement where there
+  # was a disagreement.
+  start(format = "audit")
+  claim("a", 106, "papers", published = "106")
+  claim("b", 107, "countries", published = "48")
+  claim("c", 0.19, "a bootstrap draw", published = "0.15", expect = "range")
+  claim_evidence("the estimates mostly cluster near zero")
+  expect_output(claim_summary(),
+                "CLAIM SUMMARY: asserted=3 matched=1 mismatched=1 unasserted=2")
+})
+
+test_that("an unnamed statement is sourced to the text under the audit format", {
+  # check_pdf_values.R splits the document off the manifest's source column, and
+  # an NA there is a document that does not exist rather than the body text.
+  start(format = "audit", width = c(20L, 10L))
+  expect_output(claim("a", 8.8, "the share", published = "8.8"), "\\(text: 8\\.8\\)")
+  expect_equal(claim_manifest()$source, "text")
+})
+
+test_that("the id format leaves an unnamed statement unsourced", {
+  start(published = published_fixture(), format = "id")
+  expect_output(claim("wrong", 6.1, "a wrong value"), "\\[article prints 5\\.5\\]$")
 })
 
 test_that("the manifest comes from the calls rather than from parsing the source", {
@@ -324,8 +377,8 @@ test_that("an erratum whose ids and values do not line up is refused", {
 
 test_that("a duplicated claim id is refused rather than silently overwritten", {
   start(format = "id")
-  claim("a", 3, "first", digits = 0)
-  expect_error(claim("a", 4, "second", digits = 0), "already been claimed")
+  claim("a", 3, "first", published = "3")
+  expect_error(claim("a", 4, "second", published = "4"), "already been claimed")
 })
 
 test_that("a published value that does not parse is an error, not a shape claim", {
@@ -341,6 +394,6 @@ test_that("claims before claim_start are refused", {
 
 test_that("starting a second log over an unsummarized one warns", {
   start(format = "id")
-  claim("a", 3, "first file", digits = 0)
+  claim("a", 3, "first file", published = "3")
   expect_warning(claim_start(format = "id"), "never summarized")
 })

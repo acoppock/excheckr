@@ -40,8 +40,9 @@ it from.}
 \item{expect}{One of \code{"compare"}, \code{"range"} (an unseeded bootstrap
 draw, where agreement to printed digits is the wrong test), \code{"derived"}
 (the block computes something other than the article's own token in order to
-test what the article says about it) or \code{"absent"} (the deposit has no
-counterpart for this claim).}
+test what the article says about it), \code{"shape"} (the sentence states no
+number, so the value is printed for a reader and compared against nothing)
+or \code{"absent"} (the deposit has no counterpart for this claim).}
 
 \item{tol}{Absolute tolerance, replacing the comparison at printed precision.
 For a sentence that deliberately rounds harder than the pipeline.}
@@ -68,6 +69,14 @@ contradict) or \code{DRIFT} (it contradicts the article but no longer equals
 what the erratum publishes as the correction); equality gives \code{match}; a
 \code{descriptive} claim type gives \code{hedged}; and the fallthrough is
 \code{MISMATCH}.
+
+A claim with no published value scores \code{shape} when an extraction is
+registered, because the extraction is what says the sentence states no number.
+With no extraction registered there is nowhere else the expectation could come
+from, so the same call is an error rather than a claim that prints, counts as
+unasserted and passes: a forgotten \code{published =} must not read as a
+sentence that never had a number in it. Declare \code{expect = "shape"} for
+the ones that genuinely do not.
 
 Comparison happens at the precision the published value prints, separately
 for each published statement, so a quantity stated in two documents at two

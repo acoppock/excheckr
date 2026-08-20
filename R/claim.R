@@ -127,8 +127,10 @@ claim_clean <- function(x) {
 #'   claim it names is still expected to reproduce.
 #' @param format \code{"id"} prints \code{CLAIM <id> = <value> || [verdict]
 #'   <label>}, which downstream coverage gates parse and which must stay byte
-#'   stable. \code{"audit"} prints the columnar manuscript form. The choice
-#'   changes the printed line only; no verdict depends on it.
+#'   stable. \code{"audit"} prints the columnar manuscript form, and gives an
+#'   unnamed statement the source \code{"text"} so that the manifest a coverage
+#'   gate reads always names a document. The choice changes the printed line
+#'   only; no verdict depends on it.
 #' @param width Length-2 integer, the label and value column widths used by
 #'   \code{format = "audit"}.
 #'
@@ -191,6 +193,14 @@ claim_start <- function(published = NULL, errata = NULL,
 #' \code{descriptive} claim type gives \code{hedged}; and the fallthrough is
 #' \code{MISMATCH}.
 #'
+#' A claim with no published value scores \code{shape} when an extraction is
+#' registered, because the extraction is what says the sentence states no number.
+#' With no extraction registered there is nowhere else the expectation could come
+#' from, so the same call is an error rather than a claim that prints, counts as
+#' unasserted and passes: a forgotten \code{published =} must not read as a
+#' sentence that never had a number in it. Declare \code{expect = "shape"} for
+#' the ones that genuinely do not.
+#'
 #' Comparison happens at the precision the published value prints, separately
 #' for each published statement, so a quantity stated in two documents at two
 #' precisions is compared correctly against both.
@@ -213,8 +223,9 @@ claim_start <- function(published = NULL, errata = NULL,
 #' @param expect One of \code{"compare"}, \code{"range"} (an unseeded bootstrap
 #'   draw, where agreement to printed digits is the wrong test), \code{"derived"}
 #'   (the block computes something other than the article's own token in order to
-#'   test what the article says about it) or \code{"absent"} (the deposit has no
-#'   counterpart for this claim).
+#'   test what the article says about it), \code{"shape"} (the sentence states no
+#'   number, so the value is printed for a reader and compared against nothing)
+#'   or \code{"absent"} (the deposit has no counterpart for this claim).
 #' @param tol Absolute tolerance, replacing the comparison at printed precision.
 #'   For a sentence that deliberately rounds harder than the pipeline.
 #'
@@ -231,7 +242,7 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
   if (id %in% names(log$records)) {
     stop("claim: '", id, "' has already been claimed in this log.")
   }
-  expect <- match.arg(expect, c("compare", "range", "derived", "absent"))
+  expect <- match.arg(expect, c("compare", "range", "derived", "shape", "absent"))
 
   if (is.null(published)) published <- spine_published(log, id)
   if (is.null(corrected)) corrected <- spine_corrected(log, id)
@@ -242,6 +253,15 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
   if (any(is.na(stated) & !is.na(published))) {
     stop("claim: '", id, "' has a published value that does not parse as a number: ",
          paste(published[is.na(stated) & !is.na(published)], collapse = ", "))
+  }
+  # With an extraction registered, a claim it holds no value for is a shape claim
+  # and the ladder scores it as one. With no extraction there is nowhere else for
+  # the expectation to come from, so the same call asserts nothing at all, and a
+  # forgotten published = would print, count as unasserted and pass.
+  if (all(is.na(stated)) && is.null(log$published) && expect == "compare") {
+    stop("claim: '", id, "' has no published value and no extraction is ",
+         "registered, so it asserts nothing. Pass published =, or declare ",
+         "expect = \"shape\".")
   }
 
   dec <- claim_digits(published)
@@ -280,12 +300,17 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
     "MISMATCH"
   }
 
+  # An unnamed statement has a source under the audit format, because the manifest
+  # a coverage gate reads splits the source off this string and a missing one
+  # reads there as a document that does not exist rather than as the body text.
+  stated_text <- published_text(published,
+                                source_default = if (log$format == "audit") "text")
   log$records[[id]] <- tibble::tibble(
     claim_id = id, label = label, printed = printed,
-    stated = published_text(published), corrected = corrected, verdict = verdict
+    stated = stated_text, corrected = corrected, verdict = verdict
   )
   .claim_env$log <- log
-  print_claim(log, id, label, printed, published, corrected, verdict)
+  print_claim(log, id, label, printed, stated_text, corrected, verdict)
   invisible(verdict)
 }
 
@@ -325,6 +350,17 @@ claim_evidence <- function(note, data = NULL) {
 #' allowed: a file that let that set grow in silence would report the same clean
 #' run whether it asserted every claim or none.
 #'
+#' \code{unasserted} counts what the file printed without comparing it: the
+#' evidence notes, plus the claims an \code{expect} exempted. A failure is not
+#' unasserted, it is asserted and disagreeing, and counting it in both places
+#' would let a check script that reports \code{unasserted} as "printed as
+#' evidence only" grow every time a number went wrong.
+#'
+#' Nothing decorative is printed above the summary under \code{format = "audit"}.
+#' The separator is the project's own, cat it at the call site, because the two
+#' manuscript projects rule that line differently and neither should have to
+#' change to adopt this one.
+#'
 #' @return Invisibly, a tibble of one row per claim.
 #'
 #' @family claims audit
@@ -336,7 +372,6 @@ claim_summary <- function() {
   failing <- scored[scored$verdict %in% claim_failures(), , drop = FALSE]
 
   if (log$format == "audit") {
-    cat("\n", strrep("-", 78), "\n", sep = "")
     if (nrow(failing) > 0) {
       cat("MISMATCHED CLAIMS:\n")
       for (i in seq_len(nrow(failing))) {
@@ -349,7 +384,7 @@ claim_summary <- function() {
     cat(sprintf("CLAIM SUMMARY: asserted=%d matched=%d mismatched=%d unasserted=%d\n",
                 nrow(scored), counts[["matched"]] + counts[["corrected"]],
                 nrow(failing), nrow(scored) - counts[["matched"]] -
-                  counts[["corrected"]] + log$unasserted))
+                  counts[["corrected"]] - counts[["failed"]] + log$unasserted))
   } else {
     cat("\nCLAIM SUMMARY: ",
         paste(names(counts), counts, sep = "=", collapse = " "), "\n", sep = "")
@@ -534,10 +569,13 @@ agrees <- function(value, text, tol = NULL) {
 #' Render published statements as one string
 #' @keywords internal
 #' @noRd
-published_text <- function(published) {
+published_text <- function(published, source_default = NULL) {
   if (length(published) == 0 || all(is.na(published))) return(NA_character_)
   src <- names(published)
-  if (is.null(src)) return(paste(published, collapse = "; "))
+  if (is.null(src)) {
+    if (is.null(source_default)) return(paste(published, collapse = "; "))
+    src <- rep(source_default, length(published))
+  }
   paste(paste0(src, ": ", published), collapse = "; ")
 }
 
@@ -545,8 +583,7 @@ published_text <- function(published) {
 #' Print one line of the audit trail
 #' @keywords internal
 #' @noRd
-print_claim <- function(log, id, label, printed, published, corrected, verdict) {
-  stated <- published_text(published)
+print_claim <- function(log, id, label, printed, stated, corrected, verdict) {
   if (log$format == "audit") {
     marker <- if (verdict %in% claim_failures()) "   <-- MISMATCH" else ""
     shown <- if (printed == "NA" || grepl(".", printed, fixed = TRUE)) {

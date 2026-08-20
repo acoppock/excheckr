@@ -15,6 +15,18 @@ returns the scored claims. The exemptions are counted rather than merely
 allowed: a file that let that set grow in silence would report the same clean
 run whether it asserted every claim or none.
 }
+\details{
+\code{unasserted} counts what the file printed without comparing it: the
+evidence notes, plus the claims an \code{expect} exempted. A failure is not
+unasserted, it is asserted and disagreeing, and counting it in both places
+would let a check script that reports \code{unasserted} as "printed as
+evidence only" grow every time a number went wrong.
+
+Nothing decorative is printed above the summary under \code{format = "audit"}.
+The separator is the project's own, cat it at the call site, because the two
+manuscript projects rule that line differently and neither should have to
+change to adopt this one.
+}
 \seealso{
 Other claims audit:
 \code{\link[=assert_claims]{assert_claims()}},
