@@ -64,10 +64,12 @@ number the text prints against the pipeline that is supposed to reproduce it.
   still reproduces a value an erratum says it should now contradict), `DRIFT`
   (it contradicts the article but no longer equals the published correction)
   and `MISSING`.
-* `format = "audit"` prints the columnar form the manuscript audits use, at the
-  label and value widths `claim_start()` is given. The rule above the summary is
-  the project's own, printed at the call site, because the manuscript projects
-  rule that line differently and neither should have to change to adopt this.
+* `format = "audit"` prints the columnar form the manuscript audits use. The
+  value is right-aligned and the label follows it, so both columns line up over
+  a long run without a width having to be declared. The rule above the summary
+  is the project's own, printed at the call site, because the manuscript
+  projects rule that line differently and neither should have to change to
+  adopt this.
 * `claim_number()` and `claim_digits()` reduce published typography to a number
   and to the precision that number prints: thousands separators in the several
   forms an article writes them, percent signs, LaTeX math and braces, the

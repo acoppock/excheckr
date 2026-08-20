@@ -8,7 +8,10 @@ claim_manifest()
 }
 \value{
 A tibble with \code{claim_id}, \code{label}, \code{source} and
-  \code{stated}.
+  \code{value_paper}. The value column carries the name
+  \code{\link{claim_start}} reads it back under, so collapsing the manifest
+  to one row per claim gives the extraction a published article's claims file
+  registers.
 }
 \description{
 One row per published statement a claim asserted, which is what a coverage
@@ -18,6 +21,14 @@ source, because a source parser is line-based and silently misses a call whose
 arguments wrap, reporting an asserted value as uncovered.
 }
 \details{
+It is also where the claims table of a published article comes from. One row
+per statement is what a coverage check needs, since each mention has to be
+found in the document; one row per claim is what \code{\link{claim_start}}
+registers, since a quantity has one value however many times the text states
+it. \code{dplyr::distinct(claim_id, value_paper)} converts the first into the
+second, and a paper whose two passages disagree survives that as two rows and
+is refused, which is correct: there is no single value to freeze.
+
 The caller writes it. The path is a decision belonging at the call site rather
 than inside the package.
 }

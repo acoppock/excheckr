@@ -131,9 +131,6 @@ claim_clean <- function(x) {
 #'   unnamed statement the source \code{"text"} so that the manifest a coverage
 #'   gate reads always names a document. The choice changes the printed line
 #'   only; no verdict depends on it.
-#' @param width Length-2 integer, the label and value column widths used by
-#'   \code{format = "audit"}.
-#'
 #' @return Invisibly, \code{TRUE}.
 #'
 #' @examples
@@ -145,11 +142,8 @@ claim_clean <- function(x) {
 #' @export
 claim_start <- function(published = NULL, errata = NULL,
                         quantity_classes = "quantity",
-                        format = c("id", "audit"), width = c(52L, 12L)) {
+                        format = c("id", "audit")) {
   format <- match.arg(format)
-  if (length(width) != 2 || anyNA(width)) {
-    stop("claim_start: width must be two integers, the label and value columns.")
-  }
 
   if (!is.null(.claim_env$log) && length(.claim_env$log$records) > 0 &&
       !isTRUE(.claim_env$log$summarized)) {
@@ -166,7 +160,6 @@ claim_start <- function(published = NULL, errata = NULL,
     published = published,
     corrections = corrections,
     format = format,
-    width = as.integer(width),
     summarized = FALSE
   )
   invisible(TRUE)
@@ -375,9 +368,7 @@ claim_summary <- function() {
     if (nrow(failing) > 0) {
       cat("MISMATCHED CLAIMS:\n")
       for (i in seq_len(nrow(failing))) {
-        cat(sprintf("  %-*s pipeline %-*s manuscript %s\n",
-                    log$width[1], failing$label[i], log$width[2],
-                    failing$printed[i], failing$stated[i]))
+        cat(audit_line(failing$printed[i], failing$label[i], failing$stated[i]))
       }
       cat("\n")
     }
@@ -472,11 +463,22 @@ assert_claims <- function() {
 #' source, because a source parser is line-based and silently misses a call whose
 #' arguments wrap, reporting an asserted value as uncovered.
 #'
+#' It is also where the claims table of a published article comes from. One row
+#' per statement is what a coverage check needs, since each mention has to be
+#' found in the document; one row per claim is what \code{\link{claim_start}}
+#' registers, since a quantity has one value however many times the text states
+#' it. \code{dplyr::distinct(claim_id, value_paper)} converts the first into the
+#' second, and a paper whose two passages disagree survives that as two rows and
+#' is refused, which is correct: there is no single value to freeze.
+#'
 #' The caller writes it. The path is a decision belonging at the call site rather
 #' than inside the package.
 #'
 #' @return A tibble with \code{claim_id}, \code{label}, \code{source} and
-#'   \code{stated}.
+#'   \code{value_paper}. The value column carries the name
+#'   \code{\link{claim_start}} reads it back under, so collapsing the manifest
+#'   to one row per claim gives the extraction a published article's claims file
+#'   registers.
 #'
 #' @family claims audit
 #' @export
@@ -492,7 +494,7 @@ claim_manifest <- function() {
       claim_id = scored$claim_id[i],
       label = scored$label[i],
       source = ifelse(has_source, sub(":\\s.*$", "", parts), NA_character_),
-      stated = ifelse(has_source, sub("^.*:\\s", "", parts), parts)
+      value_paper = ifelse(has_source, sub("^.*:\\s", "", parts), parts)
     )
   })
   dplyr::bind_rows(rows)
@@ -580,19 +582,36 @@ published_text <- function(published, source_default = NULL) {
 }
 
 
+#' One line of the columnar audit trail
+#'
+#' The value is right-aligned and the label follows it, so that both columns
+#' line up down a long run without anyone having to declare how wide they are.
+#' A line is printed the moment its claim runs, before the labels below it
+#' exist, so padding the label instead would mean either guessing a width or
+#' holding the whole trail back until the end.
+#'
+#' @keywords internal
+#' @noRd
+audit_line <- function(printed, label, stated, marker = "") {
+  shown <- if (printed == "NA" || grepl(".", printed, fixed = TRUE)) {
+    printed
+  } else {
+    formatC(as.numeric(printed), format = "d", big.mark = ",")
+  }
+  # A claim on a sentence that states no number has nothing to show in the
+  # parentheses, and an empty pair of them reads as a value that went missing.
+  against <- if (is.na(stated)) "" else sprintf("   (%s)", stated)
+  sprintf("  %10s  %s%s%s\n", shown, label, against, marker)
+}
+
+
 #' Print one line of the audit trail
 #' @keywords internal
 #' @noRd
 print_claim <- function(log, id, label, printed, stated, corrected, verdict) {
   if (log$format == "audit") {
     marker <- if (verdict %in% claim_failures()) "   <-- MISMATCH" else ""
-    shown <- if (printed == "NA" || grepl(".", printed, fixed = TRUE)) {
-      printed
-    } else {
-      formatC(as.numeric(printed), format = "d", big.mark = ",")
-    }
-    cat(sprintf("  %-*s %*s   (%s)%s\n", log$width[1], label, log$width[2], shown,
-                stated, marker))
+    cat(audit_line(printed, label, stated, marker))
     return(invisible(NULL))
   }
 

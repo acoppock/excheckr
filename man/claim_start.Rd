@@ -8,8 +8,7 @@ claim_start(
   published = NULL,
   errata = NULL,
   quantity_classes = "quantity",
-  format = c("id", "audit"),
-  width = c(52L, 12L)
+  format = c("id", "audit")
 )
 }
 \arguments{
@@ -33,9 +32,6 @@ stable. \code{"audit"} prints the columnar manuscript form, and gives an
 unnamed statement the source \code{"text"} so that the manifest a coverage
 gate reads always names a document. The choice changes the printed line
 only; no verdict depends on it.}
-
-\item{width}{Length-2 integer, the label and value column widths used by
-\code{format = "audit"}.}
 }
 \value{
 Invisibly, \code{TRUE}.

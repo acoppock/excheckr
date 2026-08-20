@@ -124,6 +124,9 @@ different questions.
 - `vignette("balance_testing")`: calibration of the balance tests under the
   null, including how the joint test behaves as the number of arms grows and
   when randomization inference earns its cost.
+- `vignette("auditing_claims")`: checking every number a paper prints against
+  the value your code now produces, so a stale number cannot reach a submission
+  unnoticed.
 
 ## Other tools
 

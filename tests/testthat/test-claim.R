@@ -235,7 +235,7 @@ test_that("the id format is byte stable, because build_ground_truth.R parses it"
 })
 
 test_that("the audit format marks a mismatch visibly and states the source", {
-  start(format = "audit", width = c(20L, 10L))
+  start(format = "audit")
   expect_output(claim("papers", 107, "papers", published = c("main.tex:73" = "106")),
                 "main\\.tex:73: 106.*<-- MISMATCH")
 })
@@ -327,7 +327,7 @@ test_that("a failure is counted as mismatched and not also as unasserted", {
 test_that("an unnamed statement is sourced to the text under the audit format", {
   # check_pdf_values.R splits the document off the manifest's source column, and
   # an NA there is a document that does not exist rather than the body text.
-  start(format = "audit", width = c(20L, 10L))
+  start(format = "audit")
   expect_output(claim("a", 8.8, "the share", published = "8.8"), "\\(text: 8\\.8\\)")
   expect_equal(claim_manifest()$source, "text")
 })
@@ -337,6 +337,17 @@ test_that("the id format leaves an unnamed statement unsourced", {
   expect_output(claim("wrong", 6.1, "a wrong value"), "\\[article prints 5\\.5\\]$")
 })
 
+test_that("the manifest's value column is named for the table it seeds", {
+  # claim_start(published = ) reads value_paper, so a manifest collapsed to one
+  # row per claim is the extraction a published article's claims file registers.
+  start(format = "audit")
+  claim("papers", 106, "papers", published = c("main.tex:73" = "106",
+                                               "main.tex:161" = "106"))
+  frozen <- dplyr::distinct(claim_manifest(), claim_id, value_paper)
+  expect_equal(names(frozen), c("claim_id", "value_paper"))
+  expect_silent(start(published = as.data.frame(frozen)))
+})
+
 test_that("the manifest comes from the calls rather than from parsing the source", {
   start(format = "audit")
   claim("papers", 106, "papers in the corpus",
@@ -344,7 +355,7 @@ test_that("the manifest comes from the calls rather than from parsing the source
   manifest <- claim_manifest()
   expect_equal(nrow(manifest), 2)
   expect_equal(manifest$source, c("main.tex:73", "main.tex:161"))
-  expect_equal(manifest$stated, c("106", "106"))
+  expect_equal(manifest$value_paper, c("106", "106"))
 })
 
 test_that("evidence asserts nothing and is counted as unasserted", {

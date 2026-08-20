@@ -1,0 +1,533 @@
+---
+title: "Checking the Numbers a Paper Prints"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Checking the Numbers a Paper Prints}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+options(width = 100)
+```
+
+A paper prints numbers, and the code behind them keeps moving: a cleaning fix, a respondent dropped, a package that changes a default, a coauthor who edits a filter. Nothing tells you when a sentence in the draft stops matching what the code now produces. The usual way to find out is to read every sentence against the output by hand the night before submitting, and the usual outcome is that one number gets missed.
+
+The functions here do that comparison in code. You write one line for each number the paper states, giving the number your code computes and the number the paper prints. The output is a readable list, one line per number, with the disagreements marked. Nothing is silent: a number you forget to check is a number the script will tell you about.
+
+## A complete script
+
+Here is a whole file, top to bottom. Everything is simulated so that you can run it, and the paragraph being checked is quoted in the comments.
+
+```{r whole-script, message = FALSE}
+library(excheckr)
+library(dplyr)
+library(estimatr)
+library(randomizr)
+
+# The analysis ---------------------------------------------------------------
+
+set.seed(19104)
+
+n <- 2000
+dat <- tibble(
+  X_age = round(rnorm(n, 45, 15)),
+  Z = complete_ra(n),
+  Y = 0.30 * Z + 0.004 * X_age + rnorm(n)
+)
+
+est <-
+  lm_robust(Y ~ Z, data = dat) |>
+  tidy() |>
+  filter(term == "Z")
+
+# The claims -----------------------------------------------------------------
+
+claim_start(format = "audit")
+
+# "We fielded the experiment on 2,000 respondents, 1,000 of whom were assigned
+#  to treatment. The average age was 45.2."
+claim("respondents", nrow(dat), published = "2,000")
+claim("assigned to treatment", sum(dat$Z), published = "1,000")
+claim("mean age", mean(dat$X_age), published = "45.2")
+
+# "Treatment raised the outcome by 0.27 points (SE 0.045, 95% CI 0.18 to 0.35),
+#  an effect significant at conventional levels."
+claim("effect on Y", est$estimate, published = "0.27")
+claim("standard error", est$std.error, published = "0.045")
+claim("95% CI, lower", est$conf.low, published = "0.18")
+claim("95% CI, upper", est$conf.high, published = "0.35")
+claim("t-ratio", est$statistic, digits = 2, expect = "shape")
+
+claim_summary()
+```
+
+Six of the eight lines were checked against the paper and agreed. One was not checked at all, because the sentence it covers states no number. The eighth disagrees: the draft says the confidence interval reaches 0.35 and the analysis now gives 0.36, so the line is marked where it happens and repeated at the bottom. Which of the two is wrong is not something the script can know, and a person now either edits the sentence or goes looking for what moved. What the script guarantees is that the paragraph does not get submitted without anyone noticing.
+
+The rest of this vignette takes that file apart.
+
+## Starting the list
+
+```{r start-only, eval = FALSE}
+claim_start(format = "audit")
+```
+
+`claim_start()` opens the list that everything below it writes to. Call it once, at the top.
+
+`format` chooses the shape of the printed lines. `"audit"` is the columnar form above, which reads well when the file is checking a manuscript you are still writing: the value comes first so that the numbers line up down the page however long the labels get. `"id"` is the default, and prints one line per claim naming the claim, which the last section uses.
+
+## One number, one line
+
+```{r one-claim, message = FALSE}
+claim_start(format = "audit")
+
+claim("mean age", mean(dat$X_age), published = "45.2")
+```
+
+Three things go into a `claim()`: a short name for the number, the value your code computes, and the value the paper prints.
+
+The name has to be unique within the file, and under `format = "audit"` it doubles as the label printed on the left. Write it as a person would read it rather than as a variable name.
+
+### The paper's number is written as a string
+
+Notice `published = "45.2"` rather than `published = 45.2`. Two reasons.
+
+A quoted string keeps the rounding the paper does, and the comparison is made at that rounding. `"0.30"` is compared at two decimal places and `"0.3"` at one, so a number that has not moved at all but has drifted across a rounding boundary is still caught, and a number that agrees to the precision the paper prints is not flagged for disagreeing in the fifth decimal. It also means the value printed on the left is the value the comparison used, rather than whatever your code carries underneath.
+
+A quoted string is also a literal transcription of what is on the page, so a coauthor can check it against the paper without decoding an R expression. Copy the number across exactly as printed, including the commas, the percent sign, and whatever LaTeX put around it:
+
+```{r as-printed}
+claim("respondents in the corpus", 328358, published = "328,358")
+claim("share, in percent", 22.5, published = "22.5\\%")
+claim("smallest effect", -7.1, published = "$-7.1$")
+```
+
+Because the string says how many decimal places the paper prints, you almost never have to say it again. Pass `digits` only when there is no published number to read it from. Pass `tol` in the rare case of a sentence that rounds harder than your code does and you want an absolute tolerance instead.
+
+## When the same number appears in several places
+
+An estimate quoted in the abstract and again in the results section is one number stated twice, not two numbers. Name the places and pass them together:
+
+```{r restated, message = FALSE}
+claim("respondents", nrow(dat),
+      published = c("main.tex:73" = "2,000", "abstract" = "2,000"))
+```
+
+Both are compared against the single value your code produces, on one line. Writing them as separate claims would work, but it would hide the case that matters most, which is two passages of your own paper disagreeing with each other:
+
+```{r restated-disagree}
+claim("respondents, restated in appendix", nrow(dat),
+      published = c("main.tex:73" = "2,000", "appendix.tex:41" = "1,950"))
+```
+
+The line fails even though one of the two statements is right, which is what you want. The paper contradicts itself, and no value your code produces can make both sentences true.
+
+Naming the places is worth the keystrokes for a second reason: when a line does fail, the marked line tells you which file and roughly which line to open.
+
+```{r restated-close, include = FALSE}
+invisible(claim_summary())
+```
+
+## Sentences with no number in them
+
+Plenty of sentences make a checkable statement without printing a number. "An effect significant at conventional levels" is one. "Support is highest among the youngest respondents" is another. Two functions cover them, and the difference is whether a single value stands behind the sentence.
+
+Use `expect = "shape"` when there is one value worth printing. It gets printed for you to read, compared against nothing, and keeps its name so the rest of the file knows it exists:
+
+```{r shape, message = FALSE}
+claim_start(format = "audit")
+
+# "an effect significant at conventional levels"
+claim("t-ratio", est$statistic, digits = 2, expect = "shape")
+```
+
+Use `claim_evidence()` when no single value stands behind the sentence, which is the case for anything about a pattern: "mostly", "clustered", "the exception is", or any statement about an ordering. It prints a note and, if you give it one, a table, and it checks nothing:
+
+```{r evidence}
+by_tercile <-
+  dat |>
+  mutate(tercile = ntile(X_age, 3)) |>
+  group_by(tercile) |>
+  summarize(effect = round(mean(Y[Z == 1]) - mean(Y[Z == 0]), 3), .groups = "drop")
+
+claim_evidence("the effect is largest among the oldest third", by_tercile)
+```
+
+Both are counted as printed but unchecked, which is the last number in the summary:
+
+```{r shape-summary}
+claim_summary()
+```
+
+Counting them is the point. A file that let its unchecked set grow quietly would report the same clean run whether it checked every number or none of them.
+
+## Reading the summary
+
+```{r summary-setup, include = FALSE}
+claim_start(format = "audit")
+claim("respondents", nrow(dat), published = "2,000")
+claim("95% CI, upper", est$conf.high, published = "0.35")
+claim("t-ratio", est$statistic, digits = 2, expect = "shape")
+```
+
+Take a file with three lines in it: one that agrees, one that does not, and one that states no number.
+
+```{r summary-show}
+scored <- claim_summary()
+```
+
+`asserted` counts the lines the file printed. `matched` counts the ones that agreed with the paper. `mismatched` counts the ones that disagreed, and every one of them is listed above the summary with the two values side by side, under the headings `pipeline` for what your code computed and `manuscript` for what the paper says. `unasserted` counts everything printed without being compared to anything: the `expect = "shape"` lines and the `claim_evidence()` notes.
+
+`claim_summary()` also hands the table back, if you want to do something else with it:
+
+```{r summary-return}
+scored
+```
+
+## Making a failure stop the run
+
+`claim_summary()` reports. It never stops anything, which is what you want when a person is reading the output.
+
+`assert_claims()` stops the run, which is what you want when a script is. Put it at the foot of the file. On a clean run it says nothing except which checks it could not make:
+
+```{r assert-clean}
+claim_start(format = "audit")
+
+claim("respondents", nrow(dat), published = "2,000")
+claim("mean age", mean(dat$X_age), published = "45.2")
+
+invisible(assert_claims())
+```
+
+The two messages name checks that only become available when the paper's numbers are registered in a table, which the last section covers. With nothing registered there is nothing for them to check, so they say so rather than passing quietly.
+
+A disagreement stops the file instead:
+
+```{r assert-clean-close, include = FALSE}
+invisible(claim_summary())
+```
+
+```{r assert-fails, error = TRUE}
+claim_start(format = "audit")
+
+claim("respondents", nrow(dat), published = "2,000")
+claim("95% CI, upper", est$conf.high, published = "0.35")
+
+assert_claims()
+```
+
+The failing line is printed above the error. The advice in the message about errata applies to the second style of file, below.
+
+```{r assert-close, include = FALSE}
+invisible(claim_summary())
+```
+
+## The numbers you did not mention
+
+A claims file compares the numbers it mentions. It knows nothing about the numbers in the paper that no `claim()` call ever mentions, so a file covering eleven of a paper's forty numbers still reports a clean run.
+
+`claim_manifest()` is what you use to close that gap. It returns one row per statement you checked, with the place it came from:
+
+```{r manifest, message = FALSE}
+claim_start(format = "audit")
+
+claim("respondents", nrow(dat),
+      published = c("main.tex:73" = "2,000", "abstract" = "2,000"))
+claim("effect on Y", est$estimate, published = c("main.tex:118" = "0.27"))
+
+claim_manifest()
+```
+
+Write it out, then have a separate script pull every number out of `main.tex` and list the ones that do not appear in the file:
+
+```{r manifest-write, eval = FALSE}
+claim_manifest() |>
+  readr::write_csv("output/claim_manifest.csv")
+```
+
+The manifest is built by the `claim()` calls as they run rather than by reading your file as text, which matters because a text search for `claim(` misses any call whose arguments run onto a second line, and then reports a number you did check as unchecked.
+
+```{r manifest-close, include = FALSE}
+invisible(claim_summary())
+```
+
+## When the paper's numbers are already recorded in a table
+
+Everything above writes the paper's number on the line itself, which suits a manuscript you are still editing: the draft is what it is today, and a disagreement usually ends with you editing a sentence.
+
+A published article is a different situation. Its numbers are fixed, they are worth writing down once rather than retyped into every script that touches them, and a disagreement cannot be settled by editing the paper. It ends with a correction, so the paper's side of the comparison moves into two tables:
+
+- a **claims table**, one row per number the article prints, and
+- a **corrections table**, one row per correction a published erratum has already made.
+
+### Building the claims table from the manuscript file
+
+You do not type the claims table out. If the manuscript file above is what got the paper to press, it already names every number the paper printed, and `claim_manifest()` hands them back.
+
+Run that file:
+
+```{r freeze-source}
+claim_start(format = "audit")
+
+claim("respondents", nrow(dat),
+      published = c("main.tex:73" = "2,000", "abstract" = "2,000"))
+claim("assigned", sum(dat$Z), published = c("main.tex:73" = "1,000"))
+claim("mean_age", mean(dat$X_age), published = c("main.tex:74" = "45.2"))
+claim("effect", est$estimate, published = c("main.tex:118" = "0.27"))
+claim("ci_high", est$conf.high, published = c("main.tex:118" = "0.35"))
+```
+
+Its `ci_high` line still disagrees, and that does not matter here. What goes into the claims table is the number the *paper* printed, which is 0.35 whatever the code produces today.
+
+The manifest is one row per place a number appears:
+
+```{r freeze-manifest}
+claim_manifest()
+```
+
+Collapsing it to one row per number gives the claims table. The value column already carries the name `claim_start()` reads it back under, so there is nothing to rename:
+
+```{r freeze-collapse}
+published <- claim_manifest() |>
+  distinct(claim_id, value_paper)
+
+published
+```
+
+The two shapes differ on purpose. A coverage check needs one row per mention, because each mention has to be found in the `.tex`. A claims table needs one row per number, because a number has one value however many times the paper states it, and `claim_start()` refuses a repeated `claim_id`. A paper whose two passages disagree survives the collapse as two rows and is refused, which is the right answer: there is no single value to freeze.
+
+Two columns are then yours to add, because neither is something any file could work out for you:
+
+```{r freeze-columns}
+published <-
+  published |>
+  mutate(claim_type = "quantity", needs_block = "TRUE")
+
+published
+```
+
+`needs_block` marks the numbers the checking file is required to cover, which is what lets a deleted `claim()` line be caught. Marking all of them is the right default, since the file just printed every one.
+
+`claim_type` is the one that takes reading. Set it to `descriptive` on the rows whose sentences hedge the number rather than state it, so that a disagreement there is reported for a reader to weigh instead of failing the run. Nothing can work out which those are for you: it depends on whether the sentence says "20 percent" or "about a fifth", and only the sentence knows.
+
+Write the result once, and from then on read it back with every column as text:
+
+```{r freeze-write, eval = FALSE}
+readr::write_csv(published, "published_claims.csv")
+```
+
+```{r freeze-close, include = FALSE}
+invisible(claim_summary())
+```
+
+### The tables in full
+
+The rest of this section uses a claims table built exactly that way, with a few more numbers in it, alongside a corrections table holding one erratum:
+
+```{r tables}
+published <- tibble(
+  claim_id = c("respondents", "assigned", "mean_age", "effect", "standard_error",
+               "ci_low", "ci_high", "boot_ci_low", "over_60", "wave3_effect"),
+  value_paper = c("2,000", "1,000", "45.2", "0.27", "0.045",
+                  "0.18", "0.35", "0.19", "20", "0.12"),
+  claim_type = c(rep("quantity", 8), "descriptive", "quantity"),
+  needs_block = rep("TRUE", 10)
+)
+
+errata <- tibble(
+  entry = "1",
+  class = "quantity",
+  claim_ids = "ci_high",
+  corrected_values = "0.36"
+)
+```
+
+In real use these are CSVs, and they have to be read with **every column as text**:
+
+```{r read-character, eval = FALSE}
+published <- readr::read_csv("published_claims.csv",
+                             col_types = readr::cols(.default = "c"))
+```
+
+Left to guess, `read_csv()` turns `"0.30"` into `0.3` and throws away the rounding the whole comparison depends on. `claim_start()` refuses a column that arrives as numbers, and says why.
+
+Now suppose the analysis has been rewritten and you want to know whether it still produces what the article printed. The values being checked come from the objects the rewritten code just made, exactly as before. What has moved into the table is the paper's side of the comparison, so no line passes `published` any more: each one looks its number up by name.
+
+```{r registered}
+boot <- replicate(500, {
+  i <- sample(nrow(dat), nrow(dat), replace = TRUE)
+  d <- dat[i, ]
+  mean(d$Y[d$Z == 1]) - mean(d$Y[d$Z == 0])
+})
+
+claim_start(published = published, errata = errata, format = "id")
+
+claim("respondents", nrow(dat), "respondents in the sample")
+claim("assigned", sum(dat$Z), "assigned to treatment")
+claim("mean_age", mean(dat$X_age), "mean age")
+claim("effect", est$estimate, "effect on Y")
+claim("standard_error", est$std.error, "standard error")
+claim("ci_low", est$conf.low, "95% CI, lower")
+claim("ci_high", est$conf.high, "95% CI, upper")
+claim("boot_ci_low", quantile(boot, 0.025), "bootstrap CI, lower", expect = "range")
+claim("over_60", mean(dat$X_age > 60) * 100, "share over 60, in percent")
+claim("wave3_effect", NA, "wave 3 effect", expect = "absent")
+```
+
+Two things about the calls themselves. The first argument is now the name the table uses, which leaves the third argument to carry a readable label. The printed shape is `format = "id"`, one line per claim reading `CLAIM <name> = <value> || [verdict] <label>`, which another script can parse more easily than the columnar form. Only the printing changes: the verdicts do not depend on which format you chose.
+
+Four of the verdicts are worth walking through.
+
+`ci_high` is **`corrected`**. The article prints 0.35, the rewritten code gives 0.36, and erratum entry 1 says 0.36 is the right number. The disagreement the first script in this vignette found is exactly this one, now published as a correction, so the file reports it as settled rather than as a failure. A `corrected` line is the shape a maintained archive is supposed to be in: wrong in print, corrected in public, and reproducing the correction.
+
+`boot_ci_low` is **`range`**. A bootstrap that is not seeded gives a slightly different answer on every run, so requiring the printed decimals to agree would fail at random. Declaring `expect = "range"` prints the value and compares nothing.
+
+`over_60` is **`hedged`** rather than a failure. The claims table types it `descriptive`, meaning the article hedges the number ("about a fifth were over 60"), so a disagreement at the printed precision is for a reader to weigh rather than something to fail on.
+
+`wave3_effect` is **`absent`**. The article reports a wave 3 effect and the archive has no wave 3 data, so there is nothing to compute. Declaring it is what separates a known gap from a bug: an undeclared `NA` fails as `MISSING`, and declaring `absent` and then producing a number is an error, since a claim cannot both have no counterpart and print one.
+
+```{r registered-summary}
+claim_summary()
+```
+
+The `"id"` format prints a fuller count than the columnar one: every verdict, then two totals. Read `asserted` here as the number of lines actually compared against something, which is `matched` plus `corrected`. The columnar form uses the same word for the number of lines printed.
+
+### Two verdicts about corrections
+
+The other thing the corrections table makes possible is catching a correction that has come undone. Suppose the fix never reached the rewritten code, which still produces the published 0.35:
+
+```{r close-registered, include = FALSE}
+invisible(claim_summary())
+```
+
+```{r stale}
+claim_start(published = published, errata = errata, format = "id")
+claim("ci_high", 0.3548, "95% CI, upper, from code that predates the fix")
+```
+
+**`STALE`** means the code still reproduces the number the erratum says is wrong. Either the correction never reached the code, or it reached it and was undone.
+
+Now suppose instead that a later change moved the same number again:
+
+```{r close-stale, include = FALSE}
+invisible(claim_summary())
+```
+
+```{r drift}
+claim_start(published = published, errata = errata, format = "id")
+claim("ci_high", 0.3912, "95% CI, upper, after a later change")
+```
+
+**`DRIFT`** means the code disagrees with the article, which is expected once a correction exists, but no longer matches the correction either. There are two ways to arrive there and they are fixed in opposite directions: the code has moved since the erratum was written, or the erratum has not been rebuilt since the code last moved. Rebuild the erratum first, every time, then investigate.
+
+```{r close-drift, include = FALSE}
+invisible(claim_summary())
+```
+
+### What the tables let `assert_claims()` check
+
+With both tables registered, `assert_claims()` runs two checks it could not run before, and the run above passes them:
+
+```{r assert-registered, include = FALSE}
+claim_start(published = published, errata = errata, format = "id")
+claim("respondents", nrow(dat), "respondents in the sample")
+claim("assigned", sum(dat$Z), "assigned to treatment")
+claim("mean_age", mean(dat$X_age), "mean age")
+claim("effect", est$estimate, "effect on Y")
+claim("standard_error", est$std.error, "standard error")
+claim("ci_low", est$conf.low, "95% CI, lower")
+claim("ci_high", est$conf.high, "95% CI, upper")
+claim("boot_ci_low", quantile(boot, 0.025), "bootstrap CI, lower", expect = "range")
+claim("over_60", mean(dat$X_age > 60) * 100, "share over 60, in percent")
+claim("wave3_effect", NA, "wave 3 effect", expect = "absent")
+```
+
+```{r assert-registered-show}
+invisible(assert_claims())
+```
+
+The first is that every number an erratum corrects was printed by the file, and printed as `corrected`. A published correction that nothing checks is a correction nobody is watching.
+
+The second uses the `needs_block` column, which marks the numbers the file is supposed to cover. The set printed has to equal the set marked, so a `claim()` line that goes missing is caught. Delete the `wave3_effect` line from the file above and the run stops:
+
+```{r gate3-setup, include = FALSE}
+invisible(claim_summary())
+claim_start(published = published, errata = errata, format = "id")
+claim("respondents", nrow(dat), "respondents in the sample")
+claim("assigned", sum(dat$Z), "assigned to treatment")
+claim("mean_age", mean(dat$X_age), "mean age")
+claim("effect", est$estimate, "effect on Y")
+claim("standard_error", est$std.error, "standard error")
+claim("ci_low", est$conf.low, "95% CI, lower")
+claim("ci_high", est$conf.high, "95% CI, upper")
+claim("boot_ci_low", quantile(boot, 0.025), "bootstrap CI, lower", expect = "range")
+claim("over_60", mean(dat$X_age > 60) * 100, "share over 60, in percent")
+```
+
+```{r gate3, error = TRUE}
+assert_claims()
+```
+
+Checking that a line is present is a different job from checking that it agrees, and only the table can do it. A `claim()` call that is not there produces no verdict to fail.
+
+```{r close-gate3, include = FALSE}
+invisible(claim_summary())
+```
+
+## All the verdicts
+
+The four in capitals are failures, and they are the only four that stop `assert_claims()`.
+
+| Verdict | What it means | What to do |
+|---|---|---|
+| `match` | Your value agrees with the paper, at the precision the paper prints | Nothing |
+| `corrected` | The paper is wrong, an erratum says so, and your value matches the correction | Nothing |
+| `shape` | The sentence states no number, so nothing was compared | Nothing |
+| `range` | You declared the value a random draw, so an exact comparison is the wrong test | Nothing |
+| `absent` | You declared that the archive has no counterpart for this number | Nothing |
+| `derived` | You declared that the value is computed differently from the paper's own number, in order to test what the paper says about it | Nothing |
+| `hedged` | A number the claims table marks as hedged disagrees with your value | Read the sentence and decide |
+| `MISMATCH` | Your value and the paper disagree | Edit the sentence, or publish a correction |
+| `MISSING` | The value is `NA` and no exemption was declared | Fix the code, or declare the exemption |
+| `STALE` | Your value still reproduces a number an erratum says is wrong | Apply the correction to the code |
+| `DRIFT` | Your value disagrees with the paper but no longer matches the correction | Rebuild the erratum, then investigate |
+
+`match`, `corrected` and the four failures are the ones that were actually compared against something. The rest are printed and counted as unchecked, alongside the `claim_evidence()` notes, so that the size of the unchecked set is always visible at the bottom of the run.
+
+## If another script reads the same numbers
+
+`claim_number()` and `claim_digits()` are the two pieces `claim()` uses to make its comparison: one turns the paper's typography into a number, the other reports how many decimal places the paper printed.
+
+```{r helpers}
+claim_number(c("328,358", "1{,}550", "22.5\\%", ".06", "+5%", "$-7.1$"))
+claim_digits(c("0.30", "45.2", "190"))
+```
+
+You will not normally call either one, since `claim()` does. They are exported for the script on the other side of the job: the one that scrapes every number out of your `.tex` or your compiled PDF to see what the claims file has missed. That script has to read `1{,}550` the same way the claims file does, and a second hand-rolled reader is how the two quietly stop agreeing.
+
+## One thing to watch
+
+Starting a second list before finishing the first discards the first, so the file warns:
+
+```{r warn-restart, warning = TRUE}
+claim_start()
+claim("effect on Y", est$estimate, published = "0.27")
+claim_start()
+```
+
+```{r warn-restart-close, include = FALSE}
+invisible(claim_summary())
+```
+
+A `claim()` with nothing to compare against is also an error rather than a line that quietly passes:
+
+```{r no-expectation, error = TRUE}
+claim_start()
+claim("effect on Y", est$estimate)
+```
+
+A forgotten `published =` would otherwise print, count as unchecked, and sail through every check in the file, which is the one way a script like this could mislead you. Where a sentence really does state no number, say so with `expect = "shape"`.

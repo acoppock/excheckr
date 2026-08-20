@@ -76,6 +76,21 @@ reference:
   - write_balance_check_code
   - write_attrition_check_code
 
+- title: Checking the numbers a paper prints
+  desc: >
+    Write one line for each number a paper states, giving the value your code
+    computes and the value the paper prints. Disagreements are marked as they
+    happen, counted at the end, and can be made to stop the run.
+  contents:
+  - claim_start
+  - claim
+  - claim_evidence
+  - claim_summary
+  - assert_claims
+  - claim_manifest
+  - claim_number
+  - claim_digits
+
 - title: Package
   contents:
   - excheckr-package
@@ -87,3 +102,4 @@ articles:
   - checking_many_studies
   - checking_experiments
   - balance_testing
+  - auditing_claims
