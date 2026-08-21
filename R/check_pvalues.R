@@ -117,8 +117,7 @@ summarize_check_pvalues <- function(x, p_col = "p_value", group = NULL, alpha = 
 #' plot_check_pvalues(tests)
 #' plot_check_pvalues(tests, group = "study_id", fdr = TRUE)
 #'
-#' @importFrom ggplot2 ggplot aes geom_histogram geom_hline geom_vline
-#'   scale_x_continuous labs theme_minimal facet_wrap
+#' @importFrom ggplot2 ggplot aes geom_histogram geom_hline geom_vline scale_x_continuous labs theme_minimal facet_wrap
 #' @family across-study summaries
 #' @export
 plot_check_pvalues <- function(x, p_col = "p_value", group = NULL, alpha = 0.05,
