@@ -7,7 +7,7 @@
 claim(
   id,
   value,
-  label = id,
+  label = NULL,
   published = NULL,
   corrected = NULL,
   digits = NULL,
@@ -20,7 +20,10 @@ claim(
 
 \item{value}{The pipeline's value, a numeric scalar or \code{NA}.}
 
-\item{label}{Human-readable description, printed beside the value.}
+\item{label}{Human-readable description, printed beside the value.
+\code{NULL} looks it up in the extraction registered by
+\code{\link{claim_start}}, and falls back to \code{id} where there is no
+label column or no row for this claim.}
 
 \item{published}{The article's own value, as a string carrying its own
 typography: \code{"0.30"}, not \code{0.3}. A NAMED character vector is one

@@ -8,7 +8,9 @@ claim_start(
   published = NULL,
   errata = NULL,
   quantity_classes = "quantity",
-  format = c("id", "audit")
+  format = c("id", "audit"),
+  label_column = NULL,
+  expect_column = NULL
 )
 }
 \arguments{
@@ -32,6 +34,26 @@ stable. \code{"audit"} prints the columnar manuscript form, and gives an
 unnamed statement the source \code{"text"} so that the manifest a coverage
 gate reads always names a document. The choice changes the printed line
 only; no verdict depends on it.}
+
+\item{label_column}{Name of the column in \code{published} holding each
+claim's human-readable description, looked up by \code{claim_id} when a
+\code{\link{claim}} call names none. The extraction is where that prose
+already lives, and the column is named here rather than assumed because
+the corpus calls it \code{claim} in some papers and \code{quantity} in
+others. Typing the description at the call site instead would put a second
+copy of the extraction in the script, to drift against the first.}
+
+\item{expect_column}{Name of the column in \code{published} holding each
+claim's expectation, one of \code{"compare"}, \code{"range"},
+\code{"derived"} or \code{"shape"}, used where a \code{\link{claim}}
+call declares none. Which claims cannot be compared at printed precision is
+a property of the article and its deposit, not of the block that prints
+them: offer-westort_coppock_green_2021's extraction had recorded 22 draws
+from an unseeded bootstrap and two hedged approximations since before its
+claims file existed, and the file compared all 24 at printed precision
+anyway. \code{"absent"} is not accepted here and stays a call-site
+declaration, because a claim asserting the deposit has no counterpart for it
+is the one exemption that must be visible where the value would have been.}
 }
 \value{
 Invisibly, \code{TRUE}.

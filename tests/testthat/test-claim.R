@@ -432,3 +432,115 @@ test_that("a mismatched year is punctuated the same in the trail and the block",
                 "^ +2013  ")
   expect_output(claim_summary(), "\n +2013  first fielding year")
 })
+
+test_that("the label is looked up in the extraction when a call names none", {
+  # Three repos in the maintenance corpus fetch the audit line's second half out
+  # of the extraction rather than typing it at 235 call sites. Without the
+  # lookup a conversion prints the claim's id in place of its description, which
+  # reads as a working audit trail and is the half a reader needs.
+  labelled <- tibble::tibble(
+    claim_id = c("sim_n_total", "sim_p1_min"),
+    value_paper = c("800", "0.25"),
+    quantity = c("800 units are split evenly between treatment and control",
+                 "the proportion p1 that responds in the initial sample")
+  )
+  start(published = labelled, format = "id", label_column = "quantity")
+  expect_output(claim("sim_n_total", 800),
+                "\\|\\| \\[match\\] 800 units are split evenly")
+  expect_output(claim("sim_p1_min", 0.25),
+                "\\|\\| \\[match\\] the proportion p1 that responds")
+})
+
+test_that("a label given at the call site beats the extraction's", {
+  labelled <- tibble::tibble(claim_id = "a", value_paper = "3", quantity = "from the csv")
+  start(published = labelled, format = "id", label_column = "quantity")
+  expect_output(claim("a", 3, "from the call site"), "\\|\\| \\[match\\] from the call site")
+})
+
+test_that("without a label column the line still prints the id", {
+  start(published = published_fixture(), format = "id")
+  expect_output(claim("college_elite", 96), "\\|\\| \\[match\\] college_elite")
+})
+
+test_that("a label column the extraction does not have is an error", {
+  # Naming a column that is absent would fall back to the id for every claim in
+  # the file, so the whole trail loses its descriptions and nothing says so.
+  expect_error(start(published = published_fixture(), label_column = "quantity"),
+               "no column 'quantity'")
+})
+
+test_that("a claim the label column has no value for falls back to its id", {
+  labelled <- tibble::tibble(claim_id = c("a", "b"), value_paper = c("3", "4"),
+                             quantity = c("described", NA_character_))
+  start(published = labelled, format = "id", label_column = "quantity")
+  expect_output(claim("a", 3), "\\|\\| \\[match\\] described")
+  expect_output(claim("b", 4), "\\|\\| \\[match\\] b")
+})
+
+test_that("a value rounding to zero from below prints an unsigned zero", {
+  # No article prints -0.00, so a line showing one shows a different number from
+  # the page it is meant to be read beside, and from the value it just matched.
+  start(format = "id")
+  expect_output(claim("a", -0.0001, "a difference of two near-equal numbers",
+                      published = "0.00"),
+                "= 0\\.00 \\|\\| \\[match\\]")
+  expect_output(claim("b", -0.4, "a count that came out negative zero",
+                      published = "0"),
+                "= 0 \\|\\| \\[match\\]")
+  expect_output(claim("c", -1.004, "a genuinely negative value", published = "-1.00"),
+                "= -1\\.00 \\|\\| \\[match\\]")
+})
+
+test_that("a correction printed finer than the article sets the printed precision", {
+  # offer-westort_coppock_green_2021 states a simulation share as 37% and its
+  # erratum corrects it to 36.5%. At the article's precision the line reads 36
+  # beside a note saying the correction is 36.5, and the whole point of the line
+  # is that the two can be laid together.
+  published <- tibble::tibble(claim_id = "share", value_paper = "37")
+  errata <- tibble::tibble(entry = "3", class = "quantity", claim_ids = "share",
+                           corrected_values = "36.5")
+  start(published = published, errata = errata, format = "id")
+  expect_output(claim("share", 36.5, "share picking the best proposal"),
+                "= 36\\.5 \\|\\| \\[corrected\\].*erratum corrects to 36\\.5")
+})
+
+test_that("the expectation is read from the extraction when a call declares none", {
+  # offer-westort_coppock_green_2021's extraction had recorded 22 unseeded
+  # bootstrap draws and two hedged approximations since before its claims file
+  # existed, and the file compared all 24 at printed precision anyway, so 18 of
+  # them read as disagreements with the article.
+  published <- tibble::tibble(
+    claim_id = c("boot", "hedged_count", "plain"),
+    value_paper = c("0.061", "300", "5"),
+    expect = c("range", "derived", NA_character_)
+  )
+  start(published = published, format = "id", expect_column = "expect")
+  expect_output(claim("boot", 0.059, "an unseeded bootstrap draw"), "\\[range\\]")
+  expect_output(claim("hedged_count", 322.5, "observations per day", digits = 1),
+                "\\[derived\\]")
+  expect_output(claim("plain", 5, "a plain quantity"), "\\[match\\]")
+})
+
+test_that("a call site's expectation beats the extraction's", {
+  published <- tibble::tibble(claim_id = "a", value_paper = "3", expect = "range")
+  start(published = published, format = "id", expect_column = "expect")
+  expect_output(claim("a", 9, "declared derived here", expect = "derived"), "\\[derived\\]")
+})
+
+test_that("an expect column holding a rung the ladder does not have is an error", {
+  published <- tibble::tibble(claim_id = "a", value_paper = "3", expect = "unseeded")
+  expect_error(start(published = published, expect_column = "expect"),
+               "holds unseeded")
+})
+
+test_that("absent may not be declared in the extraction", {
+  # The one exemption that has to be visible where the value would have been.
+  published <- tibble::tibble(claim_id = "a", value_paper = NA_character_, expect = "absent")
+  expect_error(start(published = published, expect_column = "expect"),
+               "absent is declared at the call site")
+})
+
+test_that("an expect column the extraction does not have is an error", {
+  expect_error(start(published = published_fixture(), expect_column = "mode"),
+               "no column 'mode'")
+})

@@ -131,6 +131,24 @@ claim_clean <- function(x) {
 #'   unnamed statement the source \code{"text"} so that the manifest a coverage
 #'   gate reads always names a document. The choice changes the printed line
 #'   only; no verdict depends on it.
+#' @param label_column Name of the column in \code{published} holding each
+#'   claim's human-readable description, looked up by \code{claim_id} when a
+#'   \code{\link{claim}} call names none. The extraction is where that prose
+#'   already lives, and the column is named here rather than assumed because
+#'   the corpus calls it \code{claim} in some papers and \code{quantity} in
+#'   others. Typing the description at the call site instead would put a second
+#'   copy of the extraction in the script, to drift against the first.
+#' @param expect_column Name of the column in \code{published} holding each
+#'   claim's expectation, one of \code{"compare"}, \code{"range"},
+#'   \code{"derived"} or \code{"shape"}, used where a \code{\link{claim}}
+#'   call declares none. Which claims cannot be compared at printed precision is
+#'   a property of the article and its deposit, not of the block that prints
+#'   them: offer-westort_coppock_green_2021's extraction had recorded 22 draws
+#'   from an unseeded bootstrap and two hedged approximations since before its
+#'   claims file existed, and the file compared all 24 at printed precision
+#'   anyway. \code{"absent"} is not accepted here and stays a call-site
+#'   declaration, because a claim asserting the deposit has no counterpart for it
+#'   is the one exemption that must be visible where the value would have been.
 #' @return Invisibly, \code{TRUE}.
 #'
 #' @examples
@@ -142,7 +160,8 @@ claim_clean <- function(x) {
 #' @export
 claim_start <- function(published = NULL, errata = NULL,
                         quantity_classes = "quantity",
-                        format = c("id", "audit")) {
+                        format = c("id", "audit"), label_column = NULL,
+                        expect_column = NULL) {
   format <- match.arg(format)
 
   if (!is.null(.claim_env$log) && length(.claim_env$log$records) > 0 &&
@@ -151,13 +170,17 @@ claim_start <- function(published = NULL, errata = NULL,
             " claims from a log that was never summarized.", call. = FALSE)
   }
 
-  if (!is.null(published)) published <- validate_published(published)
+  if (!is.null(published)) {
+    published <- validate_published(published, label_column, expect_column)
+  }
   corrections <- if (is.null(errata)) NULL else build_corrections(errata, quantity_classes)
 
   .claim_env$log <- list(
     records = list(),
     unasserted = 0L,
     published = published,
+    label_column = label_column,
+    expect_column = expect_column,
     corrections = corrections,
     format = format,
     summarized = FALSE
@@ -201,6 +224,9 @@ claim_start <- function(published = NULL, errata = NULL,
 #' @param id Claim identifier, unique within the log.
 #' @param value The pipeline's value, a numeric scalar or \code{NA}.
 #' @param label Human-readable description, printed beside the value.
+#'   \code{NULL} looks it up in the extraction registered by
+#'   \code{\link{claim_start}}, and falls back to \code{id} where there is no
+#'   label column or no row for this claim.
 #' @param published The article's own value, as a string carrying its own
 #'   typography: \code{"0.30"}, not \code{0.3}. A NAMED character vector is one
 #'   quantity stated in several places, compared against the single pipeline
@@ -226,7 +252,7 @@ claim_start <- function(published = NULL, errata = NULL,
 #'
 #' @family claims audit
 #' @export
-claim <- function(id, value, label = id, published = NULL, corrected = NULL,
+claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
                   digits = NULL, expect = "compare", tol = NULL) {
   log <- current_log()
   if (!is.character(id) || length(id) != 1 || is.na(id)) {
@@ -236,6 +262,9 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
     stop("claim: '", id, "' has already been claimed in this log.")
   }
   expect <- match.arg(expect, c("compare", "range", "derived", "shape", "absent"))
+  if (expect == "compare") expect <- spine_expect(log, id)
+
+  if (is.null(label)) label <- spine_label(log, id)
 
   if (is.null(published)) published <- spine_published(log, id)
   if (is.null(corrected)) corrected <- spine_corrected(log, id)
@@ -257,7 +286,12 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
          "expect = \"shape\".")
   }
 
-  dec <- claim_digits(published)
+  # The correction's own typography counts towards the printed precision, not just
+  # the article's. Where an erratum corrects 37 to 36.5, printing the pipeline at
+  # the article's nought decimals puts 36 on a line that says the erratum corrects
+  # to 36.5, and the reader the line exists for cannot lay the two together. The
+  # comparison is unaffected: agrees() still reads each statement at its own.
+  dec <- claim_digits(c(published, corrected))
   if (is.null(digits)) {
     if (all(is.na(dec))) {
       stop("claim: '", id, "' has no published value, so digits must be given.")
@@ -266,6 +300,12 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
   }
 
   printed <- if (length(value) != 1 || is.na(value)) "NA" else sprintf("%.*f", digits, value)
+  # A value that rounds to zero from below prints as "-0.00", and no article
+  # prints a signed zero, so the line would show a different number from the one
+  # the page carries and from the one the comparison just matched. Three repos
+  # had each patched this in their own claims file and again in the gate reading
+  # its output, six copies of one rule.
+  printed <- sub("^-(0(\\.0*)?)$", "\\1", printed)
   if (expect == "absent" && printed != "NA") {
     stop("claim: '", id, "' declares no counterpart in the deposit and printed ",
          printed, ".")
@@ -673,6 +713,43 @@ spine_published <- function(log, id) {
 }
 
 
+#' The extraction's description of a claim, or the id
+#'
+#' The audit line is two halves, the pipeline's value and a phrase saying what
+#' the value is, and the second half is what lets the trail be read beside the
+#' article without looking anything up. The extraction already carries that
+#' phrase, so it is fetched by claim_id the way the published value and the
+#' claim type are. Falling back to the id keeps a file with no label column
+#' printing the line it printed before.
+#'
+#' @keywords internal
+#' @noRd
+spine_label <- function(log, id) {
+  column <- log$label_column
+  if (is.null(log$published) || is.null(column)) return(id)
+  label <- log$published[[column]][log$published$claim_id == id]
+  if (length(label) != 1 || is.na(label)) id else label
+}
+
+
+#' The extraction's expectation for a claim, or "compare"
+#'
+#' Whether a quantity can be compared at the precision the article prints it to
+#' is a fact about the article and its deposit: a bootstrap the deposit does not
+#' seed reproducibly cannot be, and neither can a figure the sentence hedges.
+#' That belongs in the extraction beside the value, not typed again at every
+#' block that happens to print one.
+#'
+#' @keywords internal
+#' @noRd
+spine_expect <- function(log, id) {
+  column <- log$expect_column
+  if (is.null(log$published) || is.null(column)) return("compare")
+  expect <- log$published[[column]][log$published$claim_id == id]
+  if (length(expect) != 1 || is.na(expect)) "compare" else expect
+}
+
+
 #' The extraction's claim type, or NA
 #' @keywords internal
 #' @noRd
@@ -698,7 +775,8 @@ spine_corrected <- function(log, id) {
 #' Validate the extraction
 #' @keywords internal
 #' @noRd
-validate_published <- function(published) {
+validate_published <- function(published, label_column = NULL,
+                               expect_column = NULL) {
   if (!is.data.frame(published)) {
     stop("claim_start: published must be a data frame, got ",
          class(published)[1], ".")
@@ -715,6 +793,26 @@ validate_published <- function(published) {
   }
   if (anyDuplicated(published$claim_id) > 0) {
     stop("claim_start: published has duplicate claim_id values.")
+  }
+  # A label column named but absent would silently print every claim's id in
+  # place of its description, which reads as a working audit trail.
+  if (!is.null(label_column) && !label_column %in% names(published)) {
+    stop("claim_start: published has no column '", label_column, "'.")
+  }
+  if (!is.null(expect_column)) {
+    if (!expect_column %in% names(published)) {
+      stop("claim_start: published has no column '", expect_column, "'.")
+    }
+    # A misspelt rung would read as "compare" and quietly assert a claim the
+    # extraction had declared could not be asserted, which is the failure the
+    # column exists to prevent.
+    allowed <- c("compare", "range", "derived", "shape")
+    bad <- setdiff(stats::na.omit(unique(published[[expect_column]])), allowed)
+    if (length(bad) > 0) {
+      stop("claim_start: '", expect_column, "' holds ", paste(bad, collapse = ", "),
+           ". Expected one of ", paste(allowed, collapse = ", "),
+           "; absent is declared at the call site.")
+    }
   }
   published
 }
