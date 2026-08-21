@@ -298,12 +298,14 @@ claim <- function(id, value, label = id, published = NULL, corrected = NULL,
   # reads there as a document that does not exist rather than as the body text.
   stated_text <- published_text(published,
                                 source_default = if (log$format == "audit") "text")
+  separator <- published_separator(published)
   log$records[[id]] <- tibble::tibble(
     claim_id = id, label = label, printed = printed,
-    stated = stated_text, corrected = corrected, verdict = verdict
+    stated = stated_text, corrected = corrected, verdict = verdict,
+    separator = separator
   )
   .claim_env$log <- log
-  print_claim(log, id, label, printed, stated_text, corrected, verdict)
+  print_claim(log, id, label, printed, stated_text, corrected, verdict, separator)
   invisible(verdict)
 }
 
@@ -368,7 +370,8 @@ claim_summary <- function() {
     if (nrow(failing) > 0) {
       cat("MISMATCHED CLAIMS:\n")
       for (i in seq_len(nrow(failing))) {
-        cat(audit_line(failing$printed[i], failing$label[i], failing$stated[i]))
+        cat(audit_line(failing$printed[i], failing$label[i], failing$stated[i],
+                       failing$separator[i]))
       }
       cat("\n")
     }
@@ -527,7 +530,8 @@ claim_scored <- function(log) {
   if (length(log$records) == 0) {
     return(tibble::tibble(claim_id = character(), label = character(),
                           printed = character(), stated = character(),
-                          corrected = character(), verdict = character()))
+                          corrected = character(), verdict = character(),
+                          separator = logical()))
   }
   dplyr::bind_rows(log$records)
 }
@@ -582,6 +586,27 @@ published_text <- function(published, source_default = NULL) {
 }
 
 
+#' Does the article group this number's thousands?
+#'
+#' The audit trail is read against the article's own typography, so the value
+#' column has to punctuate a number the way the page does. No rule from the
+#' value alone gets that right: meta_propaganda states a year as 2012 and a
+#' respondent count as 1,776 four lines apart, and a magnitude threshold picked
+#' to spare the year silently strips the separator off every four-digit count.
+#' The article's statement is the only thing that knows, so read it. With no
+#' published value there is nothing to match, and the grouped form is the
+#' readable one.
+#'
+#' @keywords internal
+#' @noRd
+published_separator <- function(published) {
+  x <- as.character(published)
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return(TRUE)
+  any(grepl("[0-9],[0-9]", gsub("[\\\\{}]", "", x)))
+}
+
+
 #' One line of the columnar audit trail
 #'
 #' The value is right-aligned and the label follows it, so that both columns
@@ -590,10 +615,15 @@ published_text <- function(published, source_default = NULL) {
 #' exist, so padding the label instead would mean either guessing a width or
 #' holding the whole trail back until the end.
 #'
+#' \code{separator} carries whether the article groups this number's thousands,
+#' because the line exists to be read against the article's own typography and
+#' there is no rule from the value alone that gets both a year and a respondent
+#' count right. See published_separator().
+#'
 #' @keywords internal
 #' @noRd
-audit_line <- function(printed, label, stated, marker = "") {
-  shown <- if (printed == "NA" || grepl(".", printed, fixed = TRUE)) {
+audit_line <- function(printed, label, stated, separator = TRUE, marker = "") {
+  shown <- if (printed == "NA" || grepl(".", printed, fixed = TRUE) || !separator) {
     printed
   } else {
     formatC(as.numeric(printed), format = "d", big.mark = ",")
@@ -608,10 +638,11 @@ audit_line <- function(printed, label, stated, marker = "") {
 #' Print one line of the audit trail
 #' @keywords internal
 #' @noRd
-print_claim <- function(log, id, label, printed, stated, corrected, verdict) {
+print_claim <- function(log, id, label, printed, stated, corrected, verdict,
+                        separator = TRUE) {
   if (log$format == "audit") {
     marker <- if (verdict %in% claim_failures()) "   <-- MISMATCH" else ""
-    cat(audit_line(printed, label, stated, marker))
+    cat(audit_line(printed, label, stated, separator, marker))
     return(invisible(NULL))
   }
 

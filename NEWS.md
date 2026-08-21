@@ -69,7 +69,9 @@ number the text prints against the pipeline that is supposed to reproduce it.
   a long run without a width having to be declared. The rule above the summary
   is the project's own, printed at the call site, because the manuscript
   projects rule that line differently and neither should have to change to
-  adopt this.
+  adopt this. The value column punctuates thousands the way the article's own
+  statement does, so a year prints as `2012` and a respondent count on the next
+  line prints as `1,776`.
 * `claim_number()` and `claim_digits()` reduce published typography to a number
   and to the precision that number prints: thousands separators in the several
   forms an article writes them, percent signs, LaTeX math and braces, the

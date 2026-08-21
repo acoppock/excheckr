@@ -408,3 +408,27 @@ test_that("starting a second log over an unsummarized one warns", {
   claim("a", 3, "first file", published = "3")
   expect_warning(claim_start(format = "id"), "never summarized")
 })
+
+test_that("the value column punctuates thousands the way the article does", {
+  # meta_ir prints a fielding year and meta_propaganda prints both a year and a
+  # respondent count, four lines apart. A magnitude rule cannot get both right,
+  # and the one that shipped rendered every year as 2,012 beside a manuscript
+  # reading 2012, on the same line.
+  start(format = "audit")
+  expect_output(claim("year", 2012, "first fielding year", published = "2012"),
+                "^ +2012  ")
+  expect_output(claim("n", 1776, "mean study size", published = "1{,}776"),
+                "^ +1,776  ")
+  expect_output(claim("tex", 1550, "search pool", published = "$1{,}550$"),
+                "^ +1,550  ")
+})
+
+test_that("a mismatched year is punctuated the same in the trail and the block", {
+  # The trail and the MISMATCHED CLAIMS block print the same quantity three
+  # lines apart, so a rule applied in one and not the other puts two spellings
+  # of one number on the same page.
+  start(format = "audit")
+  expect_output(claim("year", 2013, "first fielding year", published = "2012"),
+                "^ +2013  ")
+  expect_output(claim_summary(), "\n +2013  first fielding year")
+})
