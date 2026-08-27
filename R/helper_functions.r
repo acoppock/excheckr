@@ -641,17 +641,30 @@ ri_joint_test <- function(data, treatment_name, covariate_cols, declaration, sim
   full_formula <- stats::as.formula(
     paste(treatment_name, "~", paste(bt_cols, collapse = " + "))
   )
-  null_formula <- stats::as.formula(paste(treatment_name, "~ 1"))
+
+  # The null model carries only an intercept, so its MLE is the vector of sample
+  # proportions and its log-likelihood is sum_k n_k log(n_k / n) exactly. Fitting it
+  # by numerical optimization on every permutation was a quarter of the runtime of a
+  # randomization-inference sweep, and it bought nothing: multinom converges to about
+  # 1e-7 of this value, so the closed form is the more accurate of the two as well as
+  # the cheaper.
+  #
+  # Hoisting the null fit out of the loop instead would have been wrong. It is
+  # constant only when the permutation holds the UNIT-level arm counts fixed, which
+  # complete assignment does and cluster assignment with unequal clusters does not.
+  # This form needs no such condition because it is recomputed, cheaply, per draw.
+  null_loglik <- function(z) {
+    n_k <- tabulate(as.factor(z))
+    n_k <- n_k[n_k > 0]
+    sum(n_k * log(n_k / sum(n_k)))
+  }
 
   # Test function: multinomial LR statistic
   test_function <- function(data) {
     fit_full <- suppressMessages(
       nnet::multinom(full_formula, data = data, trace = FALSE)
     )
-    fit_null <- suppressMessages(
-      nnet::multinom(null_formula, data = data, trace = FALSE)
-    )
-    as.numeric(-2 * (stats::logLik(fit_null) - stats::logLik(fit_full)))
+    as.numeric(2 * (stats::logLik(fit_full) - null_loglik(data[[treatment_name]])))
   }
 
   ri_out <- ri2::conduct_ri(
