@@ -85,6 +85,26 @@ Comparison happens at the precision the published value prints, separately
 for each published statement, so a quantity stated in two documents at two
 precisions is compared correctly against both.
 }
+\examples{
+claim_start()
+
+# Compared at the two decimals the article prints: 0.304 rounds to 0.30.
+claim("share_treated", 0.304, "share treated", published = "0.30")
+
+# One quantity stated in two places, at two precisions, on one line.
+claim("n_subjects", 1550, "subjects",
+      published = c(abstract = "1{,}550", table_1 = "1,550"))
+
+# A disagreement is printed, and returned invisibly for a test to read.
+verdict <- claim("ate", 0.12, "average treatment effect", published = "0.10")
+verdict
+
+# A sentence that states no number is printed and compared against nothing.
+claim("max_effect", 0.41, "largest effect", digits = 2, expect = "shape")
+
+claim_summary()
+
+}
 \seealso{
 Other claims audit:
 \code{\link[=assert_claims]{assert_claims()}},

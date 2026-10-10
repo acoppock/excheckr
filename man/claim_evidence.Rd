@@ -24,6 +24,19 @@ the evidence and asserts nothing, counting itself as printed-but-unasserted
 so that the summary reports how much of the file is judgement rather than
 pretending the whole file is machine-checked.
 }
+\examples{
+claim_start()
+effects <- data.frame(
+  study = c("a", "b", "c", "d"),
+  estimate = c(0.08, 0.11, 0.12, 0.31)
+)
+claim_evidence(
+  "Effects cluster near 0.1, with study d the exception",
+  data = effects
+)
+claim_summary()
+
+}
 \seealso{
 Other claims audit:
 \code{\link[=assert_claims]{assert_claims()}},

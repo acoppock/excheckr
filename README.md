@@ -1,7 +1,8 @@
 # excheckr
 
 <!-- badges: start -->
-[![R-CMD-check](https://img.shields.io/badge/R--CMD--check-passing-brightgreen)](https://github.com/acoppock/excheckr)
+[![R-CMD-check](https://github.com/acoppock/excheckr/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/acoppock/excheckr/actions/workflows/R-CMD-check.yaml)
+[![Codecov test coverage](https://codecov.io/gh/acoppock/excheckr/graph/badge.svg)](https://app.codecov.io/gh/acoppock/excheckr)
 <!-- badges: end -->
 
 Diagnostics for experimental data: covariate balance, differential attrition,

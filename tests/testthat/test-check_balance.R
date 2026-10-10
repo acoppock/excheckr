@@ -381,7 +381,14 @@ test_that("an aliased term is charged no degree of freedom", {
   n <- 200
   dat <- data.frame(Z = rep(0:1, n / 2), X_a = rnorm(n))
   dat$X_dup <- dat$X_a                       # exactly collinear
-  fit <- estimatr::lm_robust(Z ~ X_a + X_dup, data = dat)
+  # estimatr 2.0.0 warns that it dropped X_dup and earlier versions do not, so only
+  # that warning is muffled and any other still reaches the run.
+  withCallingHandlers(
+    fit <- estimatr::lm_robust(Z ~ X_a + X_dup, data = dat),
+    warning = function(w) {
+      if (grepl("collinear", conditionMessage(w))) invokeRestart("muffleWarning")
+    }
+  )
   expect_lt(model_df1(fit), fit$k - 1L)
   expect_equal(model_df1(fit), 1L)
 })
@@ -487,20 +494,18 @@ test_that("an exactly duplicated covariate warns and names its partner", {
   dat <- data.frame(Z = rep(0:1, n / 2), X_female = rbinom(n, 1, 0.5), X_age = rnorm(n))
   dat$X_woman <- dat$X_female                      # literally the same column
 
-  expect_warning(
+  # estimatr warns about the dropped coefficient too, so every warning is collected
+  # rather than letting the ones expect_warning() does not match leak into the run.
+  ws <- character(0)
+  withCallingHandlers(
     res <- check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"),
                          quiet = TRUE),
-    "rank deficient"
+    warning = function(w) { ws <<- c(ws, conditionMessage(w)); invokeRestart("muffleWarning") }
   )
-  expect_warning(
-    check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"), quiet = TRUE),
-    "X_woman is exactly determined by X_female"
-  )
+  expect_true(any(grepl("rank deficient", ws)))
+  expect_true(any(grepl("X_woman is exactly determined by X_female", ws)))
   # it suggests the set to keep, and does NOT prune
-  expect_warning(
-    check_balance(dat, Z, covariates = c("X_female", "X_age", "X_woman"), quiet = TRUE),
-    'covariates = c\\("X_female", "X_age"\\)'
-  )
+  expect_true(any(grepl('covariates = c\\("X_female", "X_age"\\)', ws)))
   # every covariate the caller asked for is still tested individually
   expect_setequal(unique(res$covariate_tests$covariate),
                   c("X_female", "X_age", "X_woman"))
@@ -513,10 +518,12 @@ test_that("a coarsening of another covariate is identified", {
   dat$X_party_3 <- factor(sample(c("left", "center", "right"), n, TRUE))
   dat$X_republican <- as.integer(dat$X_party_3 == "right")   # determined by the factor
 
-  expect_warning(
+  ws <- character(0)
+  withCallingHandlers(
     check_balance(dat, Z, covariates = c("X_party_3", "X_republican"), quiet = TRUE),
-    "exactly determined by"
+    warning = function(w) { ws <<- c(ws, conditionMessage(w)); invokeRestart("muffleWarning") }
   )
+  expect_true(any(grepl("X_republican is exactly determined by", ws)))
 })
 
 test_that("the warning is the only signal that a covariate was dropped", {

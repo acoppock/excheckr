@@ -27,6 +27,19 @@ The separator is the project's own, cat it at the call site, because the two
 manuscript projects rule that line differently and neither should have to
 change to adopt this one.
 }
+\examples{
+claim_start()
+claim("n_studies", 190, "studies in the corpus", published = "190")
+claim("ate", 0.12, "average treatment effect", published = "0.10")
+scored <- claim_summary()
+scored[, c("claim_id", "verdict")]
+
+# The audit format, as a manuscript's claims file prints it.
+claim_start(format = "audit")
+claim("n_studies", 190, "studies in the corpus", published = "190")
+claim_summary()
+
+}
 \seealso{
 Other claims audit:
 \code{\link[=assert_claims]{assert_claims()}},

@@ -32,6 +32,20 @@ is refused, which is correct: there is no single value to freeze.
 The caller writes it. The path is a decision belonging at the call site rather
 than inside the package.
 }
+\examples{
+claim_start(format = "audit")
+claim("n_subjects", 1550, "subjects",
+      published = c(abstract = "1,550", table_1 = "1,550"))
+claim("ate", 0.098, "average treatment effect", published = "0.10")
+claim_summary()
+
+manifest <- claim_manifest()
+manifest
+
+# One row per claim, the shape claim_start() registers as an extraction.
+dplyr::distinct(manifest, claim_id, value_paper)
+
+}
 \seealso{
 Other claims audit:
 \code{\link[=assert_claims]{assert_claims()}},

@@ -23,6 +23,36 @@ Gate 3 requires the printed set to equal the set the extraction declares needs
 a block. Gate 4 asserts the verdict counts partition the claims. Gates 2 and 3
 need the spine and are skipped, with a message, when none was registered.
 }
+\examples{
+# An extraction of what the article prints, read with every column as
+# character, and an erratum correcting one of its quantities.
+published <- data.frame(
+  claim_id = c("n_studies", "share", "ate"),
+  value_paper = c("190", "37", "0.10"),
+  needs_block = c("TRUE", "TRUE", "TRUE")
+)
+errata <- data.frame(
+  entry = "1", class = "quantity",
+  claim_ids = "share", corrected_values = "36.5"
+)
+
+# Every claim reproduces or is corrected, so all four gates hold.
+claim_start(published = published, errata = errata)
+claim("n_studies", 190)
+claim("share", 36.5)
+claim("ate", 0.098)
+claim_summary()
+assert_claims()
+
+# A claim in neither state stops the run.
+claim_start(published = published, errata = errata)
+claim("n_studies", 190)
+claim("share", 36.5)
+claim("ate", 0.14)
+claim_summary()
+try(assert_claims())
+
+}
 \seealso{
 Other claims audit:
 \code{\link[=claim]{claim()}},

@@ -250,6 +250,25 @@ claim_start <- function(published = NULL, errata = NULL,
 #'
 #' @return Invisibly, the verdict as a string.
 #'
+#' @examples
+#' claim_start()
+#'
+#' # Compared at the two decimals the article prints: 0.304 rounds to 0.30.
+#' claim("share_treated", 0.304, "share treated", published = "0.30")
+#'
+#' # One quantity stated in two places, at two precisions, on one line.
+#' claim("n_subjects", 1550, "subjects",
+#'       published = c(abstract = "1{,}550", table_1 = "1,550"))
+#'
+#' # A disagreement is printed, and returned invisibly for a test to read.
+#' verdict <- claim("ate", 0.12, "average treatment effect", published = "0.10")
+#' verdict
+#'
+#' # A sentence that states no number is printed and compared against nothing.
+#' claim("max_effect", 0.41, "largest effect", digits = 2, expect = "shape")
+#'
+#' claim_summary()
+#'
 #' @family claims audit
 #' @export
 claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
@@ -366,6 +385,18 @@ claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
 #'
 #' @return Invisibly, \code{NULL}.
 #'
+#' @examples
+#' claim_start()
+#' effects <- data.frame(
+#'   study = c("a", "b", "c", "d"),
+#'   estimate = c(0.08, 0.11, 0.12, 0.31)
+#' )
+#' claim_evidence(
+#'   "Effects cluster near 0.1, with study d the exception",
+#'   data = effects
+#' )
+#' claim_summary()
+#'
 #' @family claims audit
 #' @export
 claim_evidence <- function(note, data = NULL) {
@@ -397,6 +428,18 @@ claim_evidence <- function(note, data = NULL) {
 #' change to adopt this one.
 #'
 #' @return Invisibly, a tibble of one row per claim.
+#'
+#' @examples
+#' claim_start()
+#' claim("n_studies", 190, "studies in the corpus", published = "190")
+#' claim("ate", 0.12, "average treatment effect", published = "0.10")
+#' scored <- claim_summary()
+#' scored[, c("claim_id", "verdict")]
+#'
+#' # The audit format, as a manuscript's claims file prints it.
+#' claim_start(format = "audit")
+#' claim("n_studies", 190, "studies in the corpus", published = "190")
+#' claim_summary()
 #'
 #' @family claims audit
 #' @export
@@ -448,6 +491,35 @@ claim_summary <- function() {
 #' need the spine and are skipped, with a message, when none was registered.
 #'
 #' @return Invisibly, the scored claims tibble.
+#'
+#' @examples
+#' # An extraction of what the article prints, read with every column as
+#' # character, and an erratum correcting one of its quantities.
+#' published <- data.frame(
+#'   claim_id = c("n_studies", "share", "ate"),
+#'   value_paper = c("190", "37", "0.10"),
+#'   needs_block = c("TRUE", "TRUE", "TRUE")
+#' )
+#' errata <- data.frame(
+#'   entry = "1", class = "quantity",
+#'   claim_ids = "share", corrected_values = "36.5"
+#' )
+#'
+#' # Every claim reproduces or is corrected, so all four gates hold.
+#' claim_start(published = published, errata = errata)
+#' claim("n_studies", 190)
+#' claim("share", 36.5)
+#' claim("ate", 0.098)
+#' claim_summary()
+#' assert_claims()
+#'
+#' # A claim in neither state stops the run.
+#' claim_start(published = published, errata = errata)
+#' claim("n_studies", 190)
+#' claim("share", 36.5)
+#' claim("ate", 0.14)
+#' claim_summary()
+#' try(assert_claims())
 #'
 #' @family claims audit
 #' @export
@@ -522,6 +594,19 @@ assert_claims <- function() {
 #'   \code{\link{claim_start}} reads it back under, so collapsing the manifest
 #'   to one row per claim gives the extraction a published article's claims file
 #'   registers.
+#'
+#' @examples
+#' claim_start(format = "audit")
+#' claim("n_subjects", 1550, "subjects",
+#'       published = c(abstract = "1,550", table_1 = "1,550"))
+#' claim("ate", 0.098, "average treatment effect", published = "0.10")
+#' claim_summary()
+#'
+#' manifest <- claim_manifest()
+#' manifest
+#'
+#' # One row per claim, the shape claim_start() registers as an extraction.
+#' dplyr::distinct(manifest, claim_id, value_paper)
 #'
 #' @family claims audit
 #' @export
