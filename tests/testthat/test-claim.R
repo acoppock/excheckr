@@ -544,3 +544,102 @@ test_that("an expect column the extraction does not have is an error", {
   expect_error(start(published = published_fixture(), expect_column = "mode"),
                "no column 'mode'")
 })
+
+
+# Guards the scenarios above never reach ----------------------------------------
+
+test_that("a claim id that is not a single string is an error", {
+  start(format = "id")
+  expect_error(claim(c("a", "b"), 3, published = "3"), "id must be a single string")
+  expect_error(claim(NA_character_, 3, published = "3"), "id must be a single string")
+  expect_error(claim(1, 3, published = "3"), "id must be a single string")
+})
+
+test_that("claim_evidence prints its supporting rows beneath the note", {
+  start(format = "id")
+  expect_output(
+    claim_evidence("effects cluster near 0.1", data.frame(study = "a", estimate = 0.08)),
+    "evidence, not asserted.*study estimate"
+  )
+})
+
+test_that("a claim an erratum names that scores as exempt fails gate 2", {
+  # A range claim is not a failure, so gate 1 passes it, but an erratum correcting
+  # a quantity the file never compares is a correction nothing checks.
+  start(errata = errata_fixture(), format = "id")
+  claim("pooled_ate", 0.24, digits = 2, expect = "range")
+  claim_summary()
+  expect_error(assert_claims(), "did not score corrected")
+})
+
+test_that("the manifest leaves out claims that state no number", {
+  start(format = "audit")
+  claim("n", 190, "studies", published = "190")
+  claim("max_effect", 0.41, "largest effect", digits = 2, expect = "shape")
+  claim_summary()
+
+  manifest <- claim_manifest()
+  expect_equal(manifest$claim_id, "n")
+})
+
+test_that("agrees is FALSE for an unusable value or statement", {
+  expect_false(agrees(NA_real_, "3"))
+  expect_false(agrees(c(1, 2), "3"))
+  expect_false(agrees(3, NA_character_))
+  expect_false(agrees(3, character(0)))
+  # one statement that cannot be read fails the whole comparison
+  expect_false(agrees(3, c(a = "3", b = NA)))
+  expect_true(agrees(3, c(a = "3", b = "3.0")))
+})
+
+test_that("an extraction that is not a data frame is refused", {
+  expect_error(start(published = list(claim_id = "a", value_paper = "3")),
+               "published must be a data frame, got list")
+})
+
+test_that("an extraction missing a required column is refused, naming it", {
+  expect_error(start(published = tibble::tibble(claim_id = "a")),
+               "published needs columns value_paper")
+})
+
+test_that("an extraction with a duplicated claim_id is refused", {
+  dup <- tibble::tibble(claim_id = c("a", "a"), value_paper = c("3", "4"))
+  expect_error(start(published = dup), "duplicate claim_id")
+})
+
+test_that("an errata spine that is not a data frame is refused", {
+  expect_error(start(errata = "errata.csv"), "errata must be a data frame, got character")
+})
+
+test_that("an errata spine missing a required column is refused, naming it", {
+  bad <- errata_fixture()
+  bad$class <- NULL
+  expect_error(start(errata = bad), "errata needs columns class")
+})
+
+test_that("an errata spine with no quantity entries corrects nothing", {
+  wording <- errata_fixture()
+  wording$class <- "wording"
+  start(published = published_fixture(), errata = wording, format = "id")
+
+  # the article's own value is expected to reproduce, since no quantity erratum
+  # moves it
+  expect_output(verdict <- claim("pooled_ate", 0.30), "\\[match\\]")
+  expect_equal(verdict, "match")
+})
+
+test_that("two quantity errata correcting the same claim are refused", {
+  twice <- tibble::tibble(
+    entry = c("1", "2"), class = "quantity",
+    claim_ids = c("pooled_ate", "pooled_ate"), corrected_values = c("0.24", "0.25")
+  )
+  expect_error(start(errata = twice), "two quantity errata correct the same claim")
+})
+
+test_that("a quantity erratum with no corrected value is refused", {
+  blank <- tibble::tibble(
+    entry = "1", class = "quantity", claim_ids = "pooled_ate",
+    corrected_values = NA_character_
+  )
+  expect_error(start(errata = blank), "names a claim with no corrected value")
+})

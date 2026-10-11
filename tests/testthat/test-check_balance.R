@@ -714,3 +714,51 @@ test_that("obs_per_param is NA on the randomization-inference path", {
   expect_true(is.na(j$obs_per_param))
   expect_equal(j$status, "tested")
 })
+
+# --- Paths the fixtures above never take ------------------------------------------
+
+test_that("clustered assignment without a declaration warns that the joint test over-rejects", {
+  set.seed(301)
+  dat <- data.frame(cl = rep(1:30, each = 5))
+  dat$Z <- rep(0:1, 15)[dat$cl]
+  dat$X_age <- rnorm(150)
+
+  expect_warning(
+    res <- check_balance(dat, Z, covariates = "X_age", clusters = cl, quiet = TRUE),
+    "over-rejects under cluster randomization"
+  )
+  # the covariate-by-covariate tests still run, with the clusters passed through
+  expect_equal(nrow(res$covariate_tests), 1)
+  expect_false(is.na(res$covariate_tests$p_value))
+})
+
+test_that("a .by that consumes every covariate warns and returns NULL", {
+  dat <- make_balance_dat()
+  dat$X_group <- rep(c("a", "b"), 50)
+
+  expect_warning(
+    res <- check_balance(dat, Z, covariates = "X_group", .by = X_group),
+    "No covariates left for balance check after removing .by columns"
+  )
+  expect_null(res)
+})
+
+test_that("a stratified run prints once when quiet = FALSE", {
+  dat <- make_balance_dat()
+  dat$X_group <- rep(c("a", "a", "b", "b"), 25)
+
+  out <- capture_output(
+    res <- check_balance(dat, Z, covariates = "X_age", .by = X_group, quiet = FALSE)
+  )
+  expect_match(out, "covariate_tests")
+  expect_equal(unique(res$covariate_tests$X_group), c("a", "b"))
+})
+
+test_that("a flattened result prints as one table when quiet = FALSE", {
+  dat <- make_balance_dat()
+  expect_output(
+    res <- check_balance(dat, Z, flatten = TRUE, quiet = FALSE),
+    "joint"
+  )
+  expect_s3_class(res, "data.frame")
+})
