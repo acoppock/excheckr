@@ -622,10 +622,22 @@ test_that("an errata spine with no quantity entries corrects nothing", {
   wording$class <- "wording"
   start(published = published_fixture(), errata = wording, format = "id")
 
-  # the article's own value is expected to reproduce, since no quantity erratum
-  # moves it
-  expect_output(verdict <- claim("pooled_ate", 0.30), "\\[match\\]")
+  # no quantity erratum moves anything, so the table is empty but keeps its shape
+  expect_named(.claim_env$log$corrections, c("entry", "claim_id", "corrected"))
+  expect_equal(nrow(.claim_env$log$corrections), 0)
+
+  # the article's own value is expected to reproduce, and nothing warns about a
+  # correction table with no columns to look in
+  expect_no_warning(
+    expect_output(verdict <- claim("pooled_ate", 0.30), "\\[match\\]")
+  )
   expect_equal(verdict, "match")
+
+  # gate 2 reads the same table, and passes with nothing to check
+  start(errata = wording, format = "id")
+  expect_output(claim("n", 190, published = "190"))
+  expect_output(claim_summary())
+  expect_no_warning(suppressMessages(assert_claims()))
 })
 
 test_that("two quantity errata correcting the same claim are refused", {

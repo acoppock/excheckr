@@ -931,7 +931,12 @@ build_corrections <- function(errata, quantity_classes) {
     tibble::tibble(entry = quantity$entry[i], claim_id = ids, corrected = values)
   })
   corrections <- dplyr::bind_rows(rows)
-  if (nrow(corrections) == 0) return(corrections)
+  # Binding no rows gives a tibble with no columns, and every lookup by claim_id
+  # or corrected then warns that the column does not exist. Keep the columns.
+  if (nrow(corrections) == 0) {
+    return(tibble::tibble(entry = character(), claim_id = character(),
+                          corrected = character()))
+  }
   if (anyDuplicated(corrections$claim_id) > 0) {
     stop("claim_start: two quantity errata correct the same claim.")
   }
