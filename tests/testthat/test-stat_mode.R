@@ -48,3 +48,22 @@ test_that("na.rm = FALSE: non-NA value wins when it is more frequent than NA", {
   result <- stat_mode(x, na.rm = FALSE)
   expect_equal(result, 1)
 })
+test_that("na.rm = FALSE: an NA tied for most frequent is returned", {
+  expect_true(is.na(stat_mode(c(1, 1, NA, NA), na.rm = FALSE)))
+  expect_true(is.na(stat_mode(c(NA, NA, 1, 1), na.rm = FALSE)))
+})
+
+test_that("na.rm = FALSE: ties among values break by first occurrence", {
+  expect_equal(stat_mode(c(2, 2, 1, 1, NA), na.rm = FALSE), 2)
+})
+
+test_that("na.rm = FALSE keeps the type of character and factor input", {
+  expect_equal(stat_mode(c("a", "a", "a", NA), na.rm = FALSE), "a")
+  expect_identical(stat_mode(c("a", NA, NA), na.rm = FALSE), NA_character_)
+
+  x <- factor(c("low", "low", NA), levels = c("low", "high"))
+  result <- stat_mode(x, na.rm = FALSE)
+  expect_s3_class(result, "factor")
+  expect_equal(as.character(result), "low")
+  expect_equal(levels(result), c("low", "high"))
+})

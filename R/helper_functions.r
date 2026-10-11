@@ -447,7 +447,8 @@ has_variation <- function(x) {
 #'
 #' @param x A vector (numeric, character, or factor).
 #' @param na.rm Logical. Should missing values be removed before computing
-#'   the mode? Defaults to TRUE.
+#'   the mode? Defaults to TRUE. With FALSE, \code{NA} is counted as a value,
+#'   and is returned when it is among the most frequent.
 #'
 #' @return
 #' The most frequent value of `x`.
@@ -476,24 +477,16 @@ stat_mode <- function(x, na.rm = TRUE) {
   }
   if (length(x) == 0) return(NA)
 
-  # Handle NA explicitly if na.rm = FALSE
-  if (!na.rm && any(is.na(x))) {
-    na_count <- sum(is.na(x))
-    tab <- table(x, useNA = "ifany")
-    max_count <- max(tab)
-    modes <- names(tab)[tab == max_count]
-
-    # Return NA if NA is among the modes
-    if ("NA" %in% modes) return(NA_real_)
-
-    # Otherwise return first mode
-    return(as.numeric(modes[1]))
-  }
-
-  # normal case
+  # unique() and match() both treat NA as a value, so with na.rm = FALSE it is
+  # counted like any other and the result keeps the type of x. This replaced a
+  # table()-based branch that tested for an "NA" name table() never produces, so
+  # a tie with NA returned the non-missing value, ties broke in sorted rather than
+  # first-occurring order, and character or factor input came back as a numeric NA.
   ux <- unique(x)
   tab <- tabulate(match(x, ux))
-  mode_val <- ux[which.max(tab)]
+  modes <- which(tab == max(tab))
+  # An NA tied for most frequent wins: the mode is then genuinely unknown.
+  mode_val <- if (anyNA(ux[modes])) ux[is.na(ux)][1] else ux[modes[1]]
 
   # preserve factor type
   if (is.factor(x)) {

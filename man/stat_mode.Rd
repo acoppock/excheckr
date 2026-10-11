@@ -10,7 +10,8 @@ stat_mode(x, na.rm = TRUE)
 \item{x}{A vector (numeric, character, or factor).}
 
 \item{na.rm}{Logical. Should missing values be removed before computing
-the mode? Defaults to TRUE.}
+the mode? Defaults to TRUE. With FALSE, \code{NA} is counted as a value,
+and is returned when it is among the most frequent.}
 }
 \value{
 The most frequent value of `x`.
