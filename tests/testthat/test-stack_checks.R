@@ -88,6 +88,18 @@ test_that("stack_checks errors informatively", {
   expect_error(stack_checks(d), "named list of tibbles")
 })
 
+test_that("stack_checks errors when there is nothing named to stack", {
+  # A list saved without names, the easy mistake of list(balance) for
+  # list(balance = balance), passes the list check and then names nothing.
+  d <- tempfile("unnamed")
+  dir.create(d)
+  saveRDS(list(data.frame(study_id = "a", p_value = 0.4)), file.path(d, "a_checks.rds"))
+  expect_error(stack_checks(d), "no named elements to stack")
+
+  expect_error(stack_checks(make_check_dir(), elements = character(0)),
+               "no named elements to stack")
+})
+
 # --- Mismatched schemas across per-study files ---------------------------------
 
 test_that("stack_checks warns when files disagree about columns", {
