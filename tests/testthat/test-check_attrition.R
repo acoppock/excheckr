@@ -526,3 +526,42 @@ test_that("the Lin path's f_test also carries status", {
   expect_equal(res$f_test$status[res$f_test$outcome == "Y_some"], "tested")
   expect_equal(res$f_test$estimable, res$f_test$status == "tested")
 })
+
+# --- Paths the fixtures above never take ------------------------------------------
+
+test_that("covariates with clusters warn that the adjusted Wald test over-rejects", {
+  set.seed(401)
+  dat <- data.frame(cl = rep(1:30, each = 5))
+  dat$Z <- rep(0:1, 15)[dat$cl]
+  dat$X_age <- rnorm(150)
+  dat$Y <- rnorm(150)
+  dat$Y[sample(150, 30)] <- NA
+
+  expect_warning(
+    res <- check_attrition(dat, Z, outcomes = "Y", covariates = "X_age", clusters = cl),
+    "over-rejects under cluster randomization"
+  )
+  expect_false(is.null(res))
+})
+
+test_that("a .by that consumes every outcome warns and returns NULL", {
+  dat <- make_attrition_dat()
+  dat$Y_group <- rep(c("a", "b"), 75)
+
+  expect_warning(
+    res <- check_attrition(dat, Z_party, outcomes = "Y_group", .by = Y_group),
+    "No outcomes left for attrition check after removing .by columns"
+  )
+  expect_null(res)
+})
+
+test_that("a stratified run prints once when quiet = FALSE", {
+  dat <- make_attrition_dat()
+  dat$group <- rep(c("a", "a", "a", "b", "b", "b"), 25)
+
+  out <- capture_output(
+    res <- check_attrition(dat, Z_party, outcomes = "Y", .by = group, quiet = FALSE)
+  )
+  expect_match(out, "outcome")
+  expect_equal(res$group, c("a", "b"))
+})

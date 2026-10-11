@@ -131,3 +131,23 @@ test_that("a missing weights column errors", {
   dat <- data.frame(Z = rep(0:1, 50), X_age = rnorm(100))
   expect_error(check_smd(dat, Z, weights = "nope"), "weights column")
 })
+
+test_that("a character covariate is treated like the factor it encodes", {
+  dat <- smd_data()
+  as_character <- dat
+  as_character$X_party <- as.character(as_character$X_party)
+
+  expect_equal(
+    check_smd(as_character, Z, covariates = "X_party"),
+    check_smd(dat, Z, covariates = "X_party")
+  )
+})
+
+test_that("a .by that consumes every covariate warns and returns NULL", {
+  dat <- smd_data()
+  expect_warning(
+    res <- check_smd(dat, Z, covariates = "X_party", .by = X_party),
+    "No covariates left for SMD check after removing .by columns"
+  )
+  expect_null(res)
+})
