@@ -319,40 +319,6 @@ prepend_stratum_keys <- function(res, key_row) {
 }
 
 
-#' Reciprocal condition number of a fit's slope covariance matrix
-#'
-#' A Wald test inverts the covariance matrix of the coefficients it tests, so its
-#' statistic is only as trustworthy as that matrix's conditioning. The marginal
-#' standard errors on the diagonal can look entirely reasonable while the matrix as
-#' a whole is near-singular, in which case the inverse is dominated by numerical
-#' noise and the statistic can come out arbitrarily large.
-#'
-#' The classical F statistic is computed from residual sums of squares rather than
-#' by inversion, which is why it stays sane on the same fit and why a disagreement
-#' between the two is the signature of this problem rather than of real imbalance.
-#'
-#' @param fit A fitted model.
-#' @param drop_intercept Exclude the intercept row and column (default
-#'   \code{TRUE}), since the intercept is not part of the joint hypothesis.
-#' @return Reciprocal condition number in [0, 1], where small means badly
-#'   conditioned, or \code{NA_real_} when the matrix cannot be read.
-#' @keywords internal
-#' @noRd
-covariance_rcond <- function(fit, drop_intercept = TRUE) {
-  v <- tryCatch(stats::vcov(fit), error = function(e) NULL)
-  if (is.null(v) || !is.matrix(v) || nrow(v) < 1) return(NA_real_)
-  if (drop_intercept) {
-    nm <- gsub("`", "", rownames(v), fixed = TRUE)
-    keep <- is.null(nm) | nm != "(Intercept)"
-    v <- v[keep, keep, drop = FALSE]
-  }
-  if (nrow(v) < 1 || anyNA(v)) return(NA_real_)
-  out <- tryCatch(1 / kappa(v, exact = TRUE), error = function(e) NA_real_)
-  if (!is.finite(out)) return(NA_real_)
-  out
-}
-
-
 #' Classical omnibus F p-value, computed without inverting anything
 #'
 #' The classical F comes from a comparison of residual sums of squares, so unlike a
