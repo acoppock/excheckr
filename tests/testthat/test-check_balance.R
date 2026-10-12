@@ -762,3 +762,11 @@ test_that("a flattened result prints as one table when quiet = FALSE", {
   )
   expect_s3_class(res, "data.frame")
 })
+
+test_that("declaration = 'complete' says how to install randomizr when it is missing", {
+  local_mocked_bindings(requireNamespace = function(...) FALSE)
+  expect_error(
+    check_balance(make_balance_dat(), Z, declaration = "complete", quiet = TRUE),
+    "install.packages\\('randomizr'\\)"
+  )
+})

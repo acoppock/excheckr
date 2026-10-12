@@ -175,3 +175,20 @@ test_that("a multinomial fit that errors is reported as not estimable", {
   expect_equal(res$status, "no_convergence")
   expect_false(res$estimable)
 })
+
+test_that("classical_f_pvalue is NA when the fit does worse than the mean", {
+  # Only an OLS fit guarantees rss <= tss. A weighted fit, whose weights this
+  # ignores, need not, and a negative F has no p-value.
+  y <- 1:5
+  fit <- list(fitted.values = c(5, 4, 3, 2, 1), coefficients = c(1, 2))
+  expect_true(is.na(classical_f_pvalue(fit, y)))
+})
+
+test_that("ri_joint_test says how to install ri2 when it is missing", {
+  local_mocked_bindings(requireNamespace = function(...) FALSE)
+  dat <- data.frame(Z = factor(rep(c("C", "T"), 10)), X_age = rnorm(20))
+  expect_error(
+    ri_joint_test(dat, "Z", "X_age", declaration = NULL),
+    "install.packages\\('ri2'\\)"
+  )
+})

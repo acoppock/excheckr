@@ -52,3 +52,9 @@
 #'
 #' @name excheckr-package
 NULL
+
+# A binding testthat::local_mocked_bindings() can replace, since it cannot mock a
+# base function directly. Calls still reach base::requireNamespace(), because R
+# skips a binding that is not a function when it looks one up. It lets the tests
+# take the path of a user who has not installed randomizr or ri2.
+requireNamespace <- NULL

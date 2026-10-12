@@ -183,7 +183,10 @@ warn_aliased_covariates <- function(data, varnames, fn_name = "check_balance") {
 
   aliased <- unique(col_source[drop_cols])
   aliased <- aliased[aliased %in% varnames]
-  if (length(aliased) == 0) return(invisible(FALSE))
+  # Unreachable while the intercept is the first column, since qr() only pivots a
+  # column out when it depends on the ones before it. Kept so that a change to how
+  # the matrix is built cannot turn into a warning naming no covariate.
+  if (length(aliased) == 0) return(invisible(FALSE)) # nocov
 
   # Name the partner where the redundancy is exact: regress each dropped column on
   # the retained ones and report the covariates that determine it.
@@ -192,7 +195,8 @@ warn_aliased_covariates <- function(data, varnames, fn_name = "check_balance") {
     if (length(others) == 0) return(character(0))
     fit <- tryCatch(stats::lm.fit(cbind(1, mm[, others, drop = FALSE]), mm[, dc]),
                     error = function(e) NULL)
-    if (is.null(fit)) return(character(0))
+    # Unreachable once qr() has succeeded on a matrix containing these columns.
+    if (is.null(fit)) return(character(0)) # nocov
     if (stats::var(fit$residuals) > 1e-16 * max(1, stats::var(mm[, dc]))) return(character(0))
     b <- fit$coefficients[-1]
     names(b) <- others
