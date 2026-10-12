@@ -45,6 +45,16 @@ number the text prints against the pipeline that is supposed to reproduce it.
   pruned automatically, because choosing between two redundant covariates is an
   analysis decision.
 
+## Bug fixes
+
+* `stat_mode(na.rm = FALSE)` now counts `NA` as a value of the input's own
+  type. It had looked for a table entry named `"NA"` that `table()` never
+  produces, so an `NA` tied for most frequent returned the non-missing value
+  instead of `NA`, ties broke in sorted rather than first-occurring order, and
+  character or factor input came back as a numeric `NA` with a coercion
+  warning. An `NA` tied for most frequent is still the mode, since the mode is
+  then genuinely unknown.
+
 ## Auditing claims
 
 * `claim()` records one number an article prints, scores it against the value
@@ -80,6 +90,13 @@ number the text prints against the pipeline that is supposed to reproduce it.
   one of the five handled more than the page its own paper happened to print.
 * `claim_evidence()` prints a supporting note for a claim about shape, asserting
   nothing.
+
+## Bug fixes in the claims audit
+
+* An errata spine holding only wording corrections no longer makes every
+  `claim()` and `assert_claims()` warn that the columns `claim_id` and
+  `corrected` do not exist. The table of quantity corrections built from it was
+  empty with no columns at all; it is now empty with the columns it always has.
 
 ## Notes on what the claims audit reports
 
