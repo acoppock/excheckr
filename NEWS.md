@@ -90,6 +90,14 @@ number the text prints against the pipeline that is supposed to reproduce it.
   one of the five handled more than the page its own paper happened to print.
 * `claim_evidence()` prints a supporting note for a claim about shape, asserting
   nothing.
+* `claim(mc_band =)` gives a simulated quantity (a posterior summary, a
+  simulated count, a coverage cell) a Monte Carlo band. The claim is still
+  compared at printed precision; only a value that would score `DRIFT`, `STALE`
+  or `MISMATCH` and lies within the band, plus half the target's printed unit,
+  of the value it should equal scores `MEDIUM` instead. `MEDIUM` passes every
+  gate, an erratum's included, and is counted. The summary prints `medium=`
+  only when a claim scored it, so a file that declares no band prints exactly
+  what it did before.
 
 ## Bug fixes in the claims audit
 

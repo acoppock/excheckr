@@ -247,6 +247,18 @@ claim_start <- function(published = NULL, errata = NULL,
 #'   or \code{"absent"} (the deposit has no counterpart for this claim).
 #' @param tol Absolute tolerance, replacing the comparison at printed precision.
 #'   For a sentence that deliberately rounds harder than the pipeline.
+#' @param mc_band Absolute Monte Carlo band, for a quantity the pipeline
+#'   simulates (a posterior summary, a simulated count, a coverage cell) and
+#'   which therefore moves across platforms however it is seeded. Unlike
+#'   \code{tol} it never replaces the comparison: the claim is compared at
+#'   printed precision first, and only a value that would fail (\code{DRIFT},
+#'   \code{STALE} or \code{MISMATCH}) and lies within \code{mc_band} of the value
+#'   it should equal (the erratum's correction where there is one, otherwise the
+#'   article's), widened by half that value's last printed unit, scores
+#'   \code{MEDIUM}. \code{MEDIUM} passes every gate and is
+#'   counted separately in the summary, so a run whose draws land on the printed
+#'   values reads the same as before and one whose draws do not says so. Size it
+#'   from the quantity's Monte Carlo error, not from the gap it has to close.
 #'
 #' @return Invisibly, the verdict as a string.
 #'
@@ -272,10 +284,14 @@ claim_start <- function(published = NULL, errata = NULL,
 #' @family claims audit
 #' @export
 claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
-                  digits = NULL, expect = "compare", tol = NULL) {
+                  digits = NULL, expect = "compare", tol = NULL, mc_band = NULL) {
   log <- current_log()
   if (!is.character(id) || length(id) != 1 || is.na(id)) {
     stop("claim: id must be a single string.")
+  }
+  if (!is.null(mc_band) &&
+      (!is.numeric(mc_band) || length(mc_band) != 1 || is.na(mc_band) || mc_band < 0)) {
+    stop("claim: '", id, "' mc_band must be a single non-negative number.")
   }
   if (id %in% names(log$records)) {
     stop("claim: '", id, "' has already been claimed in this log.")
@@ -352,6 +368,21 @@ claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
     "MISMATCH"
   }
 
+  # The band rescues a failure and nothing else, and it is measured from the value
+  # the claim should now equal: the correction where an erratum gives one, since
+  # a STALE draw that lands back on the article's original number has not
+  # reproduced the correction however close the two printed values sit.
+  # The printed target is itself rounded, so the band is widened by half its last
+  # printed unit: a correction printed as -24.9 stands for anything in -24.95 to
+  # -24.85 before a single draw has moved.
+  if (!is.null(mc_band) && verdict %in% c("DRIFT", "STALE", "MISMATCH")) {
+    target <- if (is.na(corrected)) published else corrected
+    half_unit <- 0.5 * 10^-claim_digits(target)
+    if (all(abs(value - claim_number(target)) <= mc_band + half_unit + 1e-9)) {
+      verdict <- "MEDIUM"
+    }
+  }
+
   # An unnamed statement has a source under the audit format, because the manifest
   # a coverage gate reads splits the source off this string and a missing one
   # reads there as a document that does not exist rather than as the body text.
@@ -364,7 +395,8 @@ claim <- function(id, value, label = NULL, published = NULL, corrected = NULL,
     separator = separator
   )
   .claim_env$log <- log
-  print_claim(log, id, label, printed, stated_text, corrected, verdict, separator)
+  print_claim(log, id, label, printed, stated_text, corrected, verdict, separator,
+              mc_band)
   invisible(verdict)
 }
 
@@ -447,6 +479,7 @@ claim_summary <- function() {
   log <- current_log()
   scored <- claim_scored(log)
   counts <- verdict_counts(scored)
+  passed <- counts[["matched"]] + counts[["corrected"]] + counts[["medium"]]
   failing <- scored[scored$verdict %in% claim_failures(), , drop = FALSE]
 
   if (log$format == "audit") {
@@ -458,16 +491,20 @@ claim_summary <- function() {
       }
       cat("\n")
     }
-    cat(sprintf("CLAIM SUMMARY: asserted=%d matched=%d mismatched=%d unasserted=%d\n",
-                nrow(scored), counts[["matched"]] + counts[["corrected"]],
-                nrow(failing), nrow(scored) - counts[["matched"]] -
-                  counts[["corrected"]] - counts[["failed"]] + log$unasserted))
+    medium <- if (counts[["medium"]] > 0) sprintf(" medium=%d", counts[["medium"]]) else ""
+    cat(sprintf("CLAIM SUMMARY: asserted=%d matched=%d%s mismatched=%d unasserted=%d\n",
+                nrow(scored), counts[["matched"]] + counts[["corrected"]], medium,
+                nrow(failing), nrow(scored) - passed - counts[["failed"]] +
+                  log$unasserted))
   } else {
+    # medium is printed only where a claim scored it, so every file that never
+    # declares a band keeps the byte-stable summary its gates parse.
+    shown <- if (counts[["medium"]] > 0) counts else counts[names(counts) != "medium"]
     cat("\nCLAIM SUMMARY: ",
-        paste(names(counts), counts, sep = "=", collapse = " "), "\n", sep = "")
-    cat("CLAIM SUMMARY: asserted=", counts[["matched"]] + counts[["corrected"]],
-        " unasserted=", nrow(scored) - counts[["matched"]] - counts[["corrected"]] -
-          counts[["failed"]] + log$unasserted, "\n", sep = "")
+        paste(names(shown), shown, sep = "=", collapse = " "), "\n", sep = "")
+    cat("CLAIM SUMMARY: asserted=", passed,
+        " unasserted=", nrow(scored) - passed - counts[["failed"]] + log$unasserted,
+        "\n", sep = "")
   }
 
   log$summarized <- TRUE
@@ -546,7 +583,7 @@ assert_claims <- function() {
       stop("Errata entries correct claims this file does not print.", call. = FALSE)
     }
     named <- scored$verdict[scored$claim_id %in% log$corrections$claim_id]
-    if (!all(named == "corrected")) {
+    if (!all(named %in% c("corrected", "MEDIUM"))) {
       stop("A claim a quantity erratum names did not score corrected.", call. = FALSE)
     }
   }
@@ -666,9 +703,10 @@ claim_scored <- function(log) {
 #' @keywords internal
 #' @noRd
 verdict_counts <- function(scored) {
-  exemptions <- c("match", "corrected", "range", "derived", "absent", "hedged", "shape")
+  exemptions <- c("match", "corrected", "MEDIUM", "range", "derived", "absent",
+                  "hedged", "shape")
   counts <- vapply(exemptions, function(v) sum(scored$verdict == v), integer(1))
-  names(counts)[1] <- "matched"
+  names(counts)[1:3] <- c("matched", "corrected", "medium")
   c(printed = nrow(scored), counts,
     failed = sum(scored$verdict %in% claim_failures()))
 }
@@ -764,7 +802,7 @@ audit_line <- function(printed, label, stated, separator = TRUE, marker = "") {
 #' @keywords internal
 #' @noRd
 print_claim <- function(log, id, label, printed, stated, corrected, verdict,
-                        separator = TRUE) {
+                        separator = TRUE, mc_band = NULL) {
   if (log$format == "audit") {
     marker <- if (verdict %in% claim_failures()) "   <-- MISMATCH" else ""
     cat(audit_line(printed, label, stated, separator, marker))
@@ -776,12 +814,16 @@ print_claim <- function(log, id, label, printed, stated, corrected, verdict,
   # declined to.
   against <- if (verdict == "derived") {
     paste0(" [the sentence names ", stated, "]")
-  } else if (verdict %in% c("corrected", "STALE", "DRIFT")) {
+  } else if (verdict %in% c("corrected", "STALE", "DRIFT") ||
+             (verdict == "MEDIUM" && !is.na(corrected))) {
     paste0(" [article prints ", stated, "; erratum corrects to ", corrected, "]")
   } else if (!is.na(stated) && verdict != "match") {
     paste0(" [article prints ", stated, "]")
   } else {
     ""
+  }
+  if (verdict == "MEDIUM") {
+    against <- paste0(against, " [within Monte Carlo band ", format(mc_band), "]")
   }
   cat("CLAIM ", id, " = ", printed, " || [", verdict, "] ", label, against, "\n", sep = "")
   invisible(NULL)

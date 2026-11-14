@@ -135,6 +135,66 @@ test_that("moving off the value the erratum publishes scores DRIFT", {
   expect_equal(claim("pooled_ate", 0.26, "the pooled effect"), "DRIFT")
 })
 
+
+# mc_band: the MEDIUM tier for simulated quantities --------------------------
+
+test_that("a simulated value within its band of the correction scores MEDIUM, not DRIFT", {
+  start(published = published_fixture(), errata = errata_fixture(), format = "id")
+  expect_output(verdict <- claim("pooled_ate", 0.26, mc_band = 0.03),
+                "\\[MEDIUM\\].*erratum corrects to 0.24.*within Monte Carlo band 0.03")
+  expect_equal(verdict, "MEDIUM")
+})
+
+test_that("a value outside its band still fails", {
+  start(published = published_fixture(), errata = errata_fixture(), format = "id")
+  expect_equal(claim("pooled_ate", 0.29, mc_band = 0.03), "DRIFT")
+  start(published = published_fixture(), format = "id")
+  expect_equal(claim("college_elite", 99, mc_band = 2), "MISMATCH")
+})
+
+test_that("the band is measured from the correction, so a STALE draw is not rescued by the original", {
+  start(published = published_fixture(), errata = errata_fixture(), format = "id")
+  expect_equal(claim("pooled_ate", 0.30, mc_band = 0.03), "STALE")
+  start(published = published_fixture(), errata = errata_fixture(), format = "id")
+  expect_equal(claim("pooled_ate", 0.30, mc_band = 0.06), "MEDIUM")
+})
+
+test_that("the band never touches a claim that passes at printed precision", {
+  start(published = published_fixture(), errata = errata_fixture(), format = "id")
+  expect_equal(claim("pooled_ate", 0.24, mc_band = 0.03), "corrected")
+  expect_equal(claim("college_elite", 96.2, mc_band = 5), "match")
+  expect_equal(claim("hedge", 25, mc_band = 1), "hedged")
+})
+
+test_that("mc_band must be one non-negative number", {
+  start(published = published_fixture(), format = "id")
+  expect_error(claim("college_elite", 96, mc_band = -1), "non-negative")
+  expect_error(claim("n_mturk", 3001, mc_band = c(1, 2)), "non-negative")
+})
+
+test_that("MEDIUM passes every gate, including an erratum's, and is counted", {
+  start(published = published_fixture()[1:3, ], errata = errata_fixture()[1, ],
+        format = "id")
+  expect_output(claim("n_mturk", 3001))
+  expect_output(claim("college_elite", 97, mc_band = 2))
+  expect_output(claim("pooled_ate", 0.25, mc_band = 0.03))
+  expect_output(claim_summary(), "printed=3 matched=1 corrected=0 medium=2 range=0")
+  expect_output(claim_summary(), "asserted=3 unasserted=0")
+  expect_no_error(suppressMessages(assert_claims()))
+})
+
+test_that("a file that never scores MEDIUM prints the summary it always has", {
+  start(published = published_fixture(), format = "id")
+  expect_output(claim("n_mturk", 3001, mc_band = 1))
+  out <- capture.output(claim_summary())
+  expect_false(any(grepl("medium", out)))
+  start(format = "audit")
+  expect_output(claim("a", 106, "papers", published = "106"))
+  expect_output(claim("b", 109, "countries", published = "108", mc_band = 1))
+  expect_output(claim_summary(),
+                "CLAIM SUMMARY: asserted=2 matched=1 medium=1 mismatched=0 unasserted=0")
+})
+
 test_that("an erratum of a class that corrects no quantity leaves its claim comparable", {
   start(published = published_fixture(), errata = errata_fixture(), format = "id")
   expect_equal(claim("hedge", 20, "a wording erratum corrects no quantity"), "match")

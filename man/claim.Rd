@@ -12,7 +12,8 @@ claim(
   corrected = NULL,
   digits = NULL,
   expect = "compare",
-  tol = NULL
+  tol = NULL,
+  mc_band = NULL
 )
 }
 \arguments{
@@ -49,6 +50,19 @@ or \code{"absent"} (the deposit has no counterpart for this claim).}
 
 \item{tol}{Absolute tolerance, replacing the comparison at printed precision.
 For a sentence that deliberately rounds harder than the pipeline.}
+
+\item{mc_band}{Absolute Monte Carlo band, for a quantity the pipeline
+simulates (a posterior summary, a simulated count, a coverage cell) and
+which therefore moves across platforms however it is seeded. Unlike
+\code{tol} it never replaces the comparison: the claim is compared at
+printed precision first, and only a value that would fail (\code{DRIFT},
+\code{STALE} or \code{MISMATCH}) and lies within \code{mc_band} of the value
+it should equal (the erratum's correction where there is one, otherwise the
+article's), widened by half that value's last printed unit, scores
+\code{MEDIUM}. \code{MEDIUM} passes every gate and is
+counted separately in the summary, so a run whose draws land on the printed
+values reads the same as before and one whose draws do not says so. Size it
+from the quantity's Monte Carlo error, not from the gap it has to close.}
 }
 \value{
 Invisibly, the verdict as a string.
